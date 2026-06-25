@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="teal_700">#018786</color>
+    <color name="my_status_bar_color">#FF5722</color> <!-- Orange -->
+    <color name="facebook_blue">#0084FF</color>
+
+    <!-- Dashboard redesign colors -->
+    <color name="dash_bg">#F5F6FA</color>
+    <color name="dash_header_start">#B71C1C</color>
+    <color name="dash_header_end">#E53935</color>
+    <color name="dash_pending_text">#F97316</color>
+    <color name="dash_active_text">#F44336</color>
+    <color name="dash_resolved_text">#2E7D32</color>
+    <color name="dash_card_bg">#FFFFFF</color>
+    <color name="dash_divider">#EEEEEE</color>
+    <color name="dash_text_secondary">#757575</color>
+    <color name="dash_text_primary">#1A1A2E</color>
+    <color name="btn_confirm">#2E7D32</color>
+    <color name="btn_reject">#C62828</color>
+    <color name="btn_map">#E65100</color>
+    <color name="btn_call">#1565C0</color>
+    <color name="btn_messenger">#0084FF</color>
+    <color name="btn_resolve">#1B5E20</color>
+    <color name="btn_stop_alarm">#BF360C</color>
+    <color name="btn_logout">#37474F</color>
+</resources>

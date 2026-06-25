@@ -1,0 +1,26 @@
+package com.appname.dqra.admin;
+
+public class AdminEmergencyStats {
+
+    private final int pendingCount;
+    private final int activeCount;
+    private final int resolvedCount;
+
+    public AdminEmergencyStats(int pendingCount, int activeCount, int resolvedCount) {
+        this.pendingCount = pendingCount;
+        this.activeCount = activeCount;
+        this.resolvedCount = resolvedCount;
+    }
+
+    public int getPendingCount() {
+        return pendingCount;
+    }
+
+    public int getActiveCount() {
+        return activeCount;
+    }
+
+    public int getResolvedCount() {
+        return resolvedCount;
+    }
+}

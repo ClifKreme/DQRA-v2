@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"
+        android:minSdkVersion="34" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        android:minSdkVersion="34" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@drawable/dqralogo"
+        android:label="@string/app_name"
+        android:roundIcon="@drawable/dqralogo"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.DQRA"
+        tools:targetApi="31">
+        <meta-data
+            android:name="org.osmdroid.tileprovider.constants"
+            android:value="MAP" />
+        <meta-data
+            android:name="preloaded_fonts"
+            android:resource="@array/preloaded_fonts" />
+
+        <!-- Main Activity (Launcher) -->
+        <activity
+            android:name="com.appname.dqra.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name="com.appname.dqra.listeners.AlertService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="ForegroundServicePermission">
+            <intent-filter>
+                <action android:name="com.appname.dqra.messengeralert.ACTION_STOP" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name="com.appname.dqra.listeners.MessengerNotificationListener"
+            android:exported="true"
+            android:label="DQRA Messenger Listener"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+        <activity
+            android:name="com.appname.dqra.CompleteProfileActivity"
+            android:windowSoftInputMode="adjustResize"
+            android:exported="false" />
+
+        <activity android:name="com.appname.dqra.ProfileCheckActivity" />
+        <service
+            android:name="com.appname.dqra.listeners.FirestoreService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+        <activity
+            android:name="com.appname.dqra.image.FullScreenImageActivity"
+            android:screenOrientation="fullSensor"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+
+        <!-- Login Activity -->
+        <activity
+            android:name="com.appname.dqra.LoginActivity"
+            android:exported="false" />
+
+        <activity
+            android:name="com.appname.dqra.ISUFSTMAIN"
+            android:exported="false" />
+        <activity
+            android:name="com.appname.dqra.ProfileActivity"
+            android:exported="false" />
+        <activity
+            android:name="com.appname.dqra.AdminProfileActivity"
+            android:exported="false" />
+        <activity android:name="com.appname.dqra.WebsiteActivity" />
+        <activity android:name="com.appname.dqra.HelpSupportActivity"
+            android:exported="false" />
+        <activity android:name="com.appname.dqra.AboutActivity"
+            android:exported="false" />
+        <activity android:name="com.appname.dqra.AddEmergencyContactActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <activity android:name="com.appname.dqra.EmergencyContactsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name="com.appname.dqra.EmergencyLogsAdapter"
+            android:exported="false" />
+        <!-- Admin Registration Activity -->
+        <activity
+            android:name="com.appname.dqra.mainregister.MainAdminRegister"
+            android:exported="false" />
+        <activity
+            android:name="com.appname.dqra.maindashboards.AdminDashboard"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
+        <!-- Admin Dashboard Activity (Check if missing) -->
+
+        <activity
+            android:name="com.appname.dqra.RegisterActivity"
+            android:exported="false" />
+
+        <activity
+            android:name="com.appname.dqra.maindashboards.UserDashboard"
+            android:exported="false" />
+
+
+    </application>
+</manifest>

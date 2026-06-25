@@ -1,0 +1,19 @@
+<!-- res/drawable/white_orange_gradient_bottom.xml -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- White background -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFF" />
+        </shape>
+    </item>
+
+    <!-- Orange gradient overlay at bottom -->
+    <item android:top="80dp">
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#00FFA500"
+                android:endColor="#FFFFA500"
+                android:angle="270" />
+        </shape>
+    </item>
+</layer-list>

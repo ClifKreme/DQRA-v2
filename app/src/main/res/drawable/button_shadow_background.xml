@@ -1,0 +1,23 @@
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+
+    <!-- Blue background color -->
+    <solid android:color="@color/facebook_blue" />
+
+    <!-- Rounded corners -->
+    <corners android:radius="12dp" />
+
+    <!-- Shadow-like effect -->
+    <padding android:left="6dp" android:top="6dp" android:right="6dp" android:bottom="6dp" />
+
+    <!-- Slight shadow simulation using gradient -->
+    <gradient
+        android:startColor="#FF1877F2"
+        android:endColor="#FF145DBF"
+        android:angle="90" />
+
+    <!-- Optional border -->
+    <stroke
+        android:width="1dp"
+        android:color="#1A000000" />
+</shape>
