@@ -10,10 +10,7 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.google.firebase.firestore.FirebaseFirestore;
-
-import java.util.HashMap;
-import java.util.Map;
+import com.appname.dqra.repository.EmergencyContactRepository;
 
 /**
  * AddEmergencyContactActivity
@@ -25,18 +22,16 @@ import java.util.Map;
  */
 public class AddEmergencyContactActivity extends AppCompatActivity {
 
-    private static final String COLLECTION = "emergency_contacts";
-
     private EditText etBarangay, etStationName, etPhone;
     private Button   btnSave;
-    private FirebaseFirestore db;
+    private EmergencyContactRepository contactRepository;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_add_emergency_contact);
 
-        db = FirebaseFirestore.getInstance();
+        contactRepository = new EmergencyContactRepository();
 
         ImageButton btnBack = findViewById(R.id.btnAddContactBack);
         etBarangay    = findViewById(R.id.etContactBarangay);
@@ -79,21 +74,22 @@ public class AddEmergencyContactActivity extends AppCompatActivity {
 
         btnSave.setEnabled(false);
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("barangay",    barangay);
-        data.put("stationName", stationName);
-        data.put("phoneNumber", phone);
+        contactRepository.addContact(barangay, stationName, phone,
+                new EmergencyContactRepository.Callback<Void>() {
+                    @Override
+                    public void onSuccess(Void value) {
+                        Toast.makeText(AddEmergencyContactActivity.this,
+                                "Emergency contact saved!", Toast.LENGTH_SHORT).show();
+                        clearFields();
+                        btnSave.setEnabled(true);
+                    }
 
-        db.collection(COLLECTION)
-                .add(data)
-                .addOnSuccessListener(ref -> {
-                    Toast.makeText(this, "Emergency contact saved!", Toast.LENGTH_SHORT).show();
-                    clearFields();
-                    btnSave.setEnabled(true);
-                })
-                .addOnFailureListener(e -> {
-                    Toast.makeText(this, "Failed to save: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                    btnSave.setEnabled(true);
+                    @Override
+                    public void onError(Exception exception) {
+                        Toast.makeText(AddEmergencyContactActivity.this,
+                                "Failed to save: " + exception.getMessage(), Toast.LENGTH_SHORT).show();
+                        btnSave.setEnabled(true);
+                    }
                 });
     }
 

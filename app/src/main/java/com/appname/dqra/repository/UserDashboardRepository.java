@@ -2,6 +2,7 @@ package com.appname.dqra.repository;
 
 import android.util.Log;
 
+import com.appname.dqra.cache.AppCache;
 import com.appname.dqra.model.RescueStation;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
@@ -111,6 +112,12 @@ public class UserDashboardRepository {
     }
 
     private void fetchAllStations(StationResultCallback callback) {
+        List<RescueStation> cachedStations = AppCache.getInstance().getRescueStations();
+        boolean hasCache = cachedStations != null && !cachedStations.isEmpty();
+        if (hasCache) {
+            callback.onSuccess(cachedStations);
+        }
+
         firestore.collection(STATIONS_COLLECTION)
                 .get()
                 .addOnSuccessListener(querySnapshot -> {
@@ -118,9 +125,14 @@ public class UserDashboardRepository {
                     for (QueryDocumentSnapshot document : querySnapshot) {
                         stations.add(stationFromDocument(document));
                     }
+                    AppCache.getInstance().putRescueStations(stations);
                     callback.onSuccess(stations);
                 })
-                .addOnFailureListener(callback::onError);
+                .addOnFailureListener(exception -> {
+                    if (!hasCache) {
+                        callback.onError(exception);
+                    }
+                });
     }
 
     private RescueStation stationFromDocument(QueryDocumentSnapshot document) {

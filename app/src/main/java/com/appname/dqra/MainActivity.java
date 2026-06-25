@@ -15,8 +15,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import com.google.firebase.firestore.FirebaseFirestore;
-
 public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 101;
     private static final int BACKGROUND_LOCATION_REQUEST_CODE = 102;
@@ -25,13 +23,9 @@ public class MainActivity extends AppCompatActivity {
     private boolean waitingForNotificationSettings = false;
     private boolean notificationDialogShowing = false;
 
-    private FirebaseFirestore db;
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        db = FirebaseFirestore.getInstance();
 
         // Check if it's the first launch
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);

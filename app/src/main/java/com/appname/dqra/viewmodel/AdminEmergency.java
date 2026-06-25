@@ -1,4 +1,4 @@
-package com.appname.dqra.admin;
+package com.appname.dqra.viewmodel;
 
 public class AdminEmergency {
 
@@ -8,6 +8,7 @@ public class AdminEmergency {
     private final double longitude;
     private final String phoneNumber;
     private final String reportedBy;
+    private final String reportedByProfileImageBase64;
     private final String status;
     private final boolean hasImage;
     private final String imageBase64;
@@ -16,12 +17,20 @@ public class AdminEmergency {
     public AdminEmergency(String id, String municipality, double latitude, double longitude,
                           String phoneNumber, String reportedBy, String status,
                           boolean hasImage, String imageBase64, long timestamp) {
+        this(id, municipality, latitude, longitude, phoneNumber, reportedBy, null,
+                status, hasImage, imageBase64, timestamp);
+    }
+
+    public AdminEmergency(String id, String municipality, double latitude, double longitude,
+                          String phoneNumber, String reportedBy, String reportedByProfileImageBase64,
+                          String status, boolean hasImage, String imageBase64, long timestamp) {
         this.id = id;
         this.municipality = municipality;
         this.latitude = latitude;
         this.longitude = longitude;
         this.phoneNumber = phoneNumber;
         this.reportedBy = reportedBy;
+        this.reportedByProfileImageBase64 = reportedByProfileImageBase64;
         this.status = status;
         this.hasImage = hasImage;
         this.imageBase64 = imageBase64;
@@ -50,6 +59,10 @@ public class AdminEmergency {
 
     public String getReportedBy() {
         return reportedBy;
+    }
+
+    public String getReportedByProfileImageBase64() {
+        return reportedByProfileImageBase64;
     }
 
     public String getStatus() {

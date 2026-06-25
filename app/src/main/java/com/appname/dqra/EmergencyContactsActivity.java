@@ -15,10 +15,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.appname.dqra.model.EmergencyContact;
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.FirebaseFirestore;
+import com.appname.dqra.repository.EmergencyContactRepository;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -30,20 +28,18 @@ import java.util.List;
  */
 public class EmergencyContactsActivity extends AppCompatActivity {
 
-    private static final String COLLECTION = "emergency_contacts";
-
     private RecyclerView         recyclerView;
     private EmergencyContactAdapter adapter;
     private TextView             tvEmpty;
     private EditText             etSearch;
-    private FirebaseFirestore    db;
+    private EmergencyContactRepository contactRepository;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_emergency_contacts);
 
-        db = FirebaseFirestore.getInstance();
+        contactRepository = new EmergencyContactRepository();
 
         ImageButton btnBack = findViewById(R.id.btnEmergencyContactsBack);
         tvEmpty      = findViewById(R.id.tvEmptyContacts);
@@ -73,25 +69,20 @@ public class EmergencyContactsActivity extends AppCompatActivity {
     // ─── Load from Firestore ─────────────────────────────────────────────────
 
     private void loadContacts() {
-        db.collection(COLLECTION)
-                .orderBy("barangay")
-                .get()
-                .addOnSuccessListener(snapshot -> {
-                    List<EmergencyContact> list = new ArrayList<>();
-                    for (DocumentSnapshot doc : snapshot.getDocuments()) {
-                        EmergencyContact contact = doc.toObject(EmergencyContact.class);
-                        if (contact != null) {
-                            contact.setId(doc.getId());
-                            list.add(contact);
-                        }
-                    }
-                    adapter.setData(list);
-                    updateEmptyState();
-                })
-                .addOnFailureListener(e ->
-                        Toast.makeText(this,
-                                "Failed to load contacts: " + e.getMessage(),
-                                Toast.LENGTH_SHORT).show());
+        contactRepository.fetchContacts(new EmergencyContactRepository.Callback<List<EmergencyContact>>() {
+            @Override
+            public void onSuccess(List<EmergencyContact> contacts) {
+                adapter.setData(contacts);
+                updateEmptyState();
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                Toast.makeText(EmergencyContactsActivity.this,
+                        "Failed to load contacts: " + exception.getMessage(),
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private void updateEmptyState() {

@@ -2,8 +2,9 @@ package com.appname.dqra.repository;
 
 import android.location.Location;
 
-import com.appname.dqra.admin.AdminEmergency;
-import com.appname.dqra.admin.AdminEmergencyStats;
+import com.appname.dqra.cache.AppCache;
+import com.appname.dqra.viewmodel.AdminEmergency;
+import com.appname.dqra.viewmodel.AdminEmergencyStats;
 import com.google.firebase.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FieldValue;
@@ -28,8 +29,14 @@ public class AdminDashboardRepository {
         void onError(Exception exception);
     }
 
+    public interface WebsiteNotificationListener {
+        void onNotification();
+        void onError(Exception exception);
+    }
+
     private static final String ADMINS_COLLECTION = "admins_with_stations";
     private static final String EMERGENCIES_COLLECTION = "emergency_locations";
+    private static final String WEBSITE_NOTIFICATIONS_COLLECTION = "website_notifications";
     private static final String STATUS_PENDING = "pending";
     private static final String STATUS_CONFIRMED = "confirmed";
     private static final String STATUS_REJECTED = "rejected";
@@ -66,26 +73,41 @@ public class AdminDashboardRepository {
             return;
         }
 
+        String cachedMunicipality = AppCache.getInstance().getAdminMunicipality(adminUid);
+        boolean hasCache = cachedMunicipality != null && !cachedMunicipality.isEmpty();
+        if (hasCache) {
+            callback.onSuccess(cachedMunicipality);
+        }
+
         firestore.collection(ADMINS_COLLECTION)
                 .document(adminUid)
                 .get()
                 .addOnSuccessListener(documentSnapshot -> {
                     if (!documentSnapshot.exists()) {
-                        callback.onError(new IllegalStateException(
-                                "Admin account not properly configured. Please contact system administrator."));
+                        if (!hasCache) {
+                            callback.onError(new IllegalStateException(
+                                    "Admin account not properly configured. Please contact system administrator."));
+                        }
                         return;
                     }
 
                     String municipality = documentSnapshot.getString("municipality");
                     if (municipality == null || municipality.isEmpty()) {
-                        callback.onError(new IllegalStateException(
-                                "No municipality assigned to admin. Please contact system administrator."));
+                        if (!hasCache) {
+                            callback.onError(new IllegalStateException(
+                                    "No municipality assigned to admin. Please contact system administrator."));
+                        }
                         return;
                     }
 
+                    AppCache.getInstance().putAdminMunicipality(adminUid, municipality);
                     callback.onSuccess(municipality);
                 })
-                .addOnFailureListener(callback::onError);
+                .addOnFailureListener(exception -> {
+                    if (!hasCache) {
+                        callback.onError(exception);
+                    }
+                });
     }
 
     public ListenerRegistration listenForEmergencies(String municipality,
@@ -205,27 +227,134 @@ public class AdminDashboardRepository {
                 .addOnFailureListener(callback::onError);
     }
 
+    public void fetchEmergencyImageData(String emergencyId, ValueCallback<AdminEmergency> callback) {
+        firestore.collection(EMERGENCIES_COLLECTION)
+                .document(emergencyId)
+                .get()
+                .addOnSuccessListener(documentSnapshot -> {
+                    if (!documentSnapshot.exists()) {
+                        callback.onError(new IllegalStateException("Emergency not found"));
+                        return;
+                    }
+
+                    callback.onSuccess(emergencyFromSnapshot(
+                            documentSnapshot.getId(),
+                            documentSnapshot.getString("municipality"),
+                            documentSnapshot.getDouble("latitude"),
+                            documentSnapshot.getDouble("longitude"),
+                            documentSnapshot.getString("phoneNumber"),
+                            documentSnapshot.getString("reportedBy"),
+                            documentSnapshot.getString("reportedByProfileImageBase64"),
+                            documentSnapshot.getString("status"),
+                            documentSnapshot.getBoolean("hasImage"),
+                            documentSnapshot.getString("imageBase64"),
+                            getTimestampMillis(documentSnapshot.get("timestamp"))));
+                })
+                .addOnFailureListener(callback::onError);
+    }
+
+    public ListenerRegistration listenForEmergencyImageData(String emergencyId,
+                                                            ValueCallback<AdminEmergency> callback) {
+        return firestore.collection(EMERGENCIES_COLLECTION)
+                .document(emergencyId)
+                .addSnapshotListener((documentSnapshot, error) -> {
+                    if (error != null) {
+                        callback.onError(error);
+                        return;
+                    }
+
+                    if (documentSnapshot == null || !documentSnapshot.exists()) {
+                        callback.onError(new IllegalStateException("Emergency not found"));
+                        return;
+                    }
+
+                    callback.onSuccess(emergencyFromSnapshot(
+                            documentSnapshot.getId(),
+                            documentSnapshot.getString("municipality"),
+                            documentSnapshot.getDouble("latitude"),
+                            documentSnapshot.getDouble("longitude"),
+                            documentSnapshot.getString("phoneNumber"),
+                            documentSnapshot.getString("reportedBy"),
+                            documentSnapshot.getString("reportedByProfileImageBase64"),
+                            documentSnapshot.getString("status"),
+                            documentSnapshot.getBoolean("hasImage"),
+                            documentSnapshot.getString("imageBase64"),
+                            getTimestampMillis(documentSnapshot.get("timestamp"))));
+                });
+    }
+
+    public ListenerRegistration listenForWebsiteNotifications(String municipality,
+                                                              WebsiteNotificationListener listener) {
+        return firestore.collection(WEBSITE_NOTIFICATIONS_COLLECTION)
+                .whereEqualTo("municipality", municipality)
+                .whereEqualTo("status", "unread")
+                .addSnapshotListener((queryDocumentSnapshots, error) -> {
+                    if (error != null) {
+                        listener.onError(error);
+                        return;
+                    }
+
+                    if (queryDocumentSnapshots == null || queryDocumentSnapshots.isEmpty()) {
+                        return;
+                    }
+
+                    for (QueryDocumentSnapshot document : queryDocumentSnapshots) {
+                        listener.onNotification();
+                        document.getReference().update("status", "read");
+                    }
+                });
+    }
+
     private AdminEmergency emergencyFromDocument(QueryDocumentSnapshot document) {
         Double lat = document.getDouble("latitude");
         Double lng = document.getDouble("longitude");
         Boolean hasImage = document.getBoolean("hasImage");
         String imageBase64 = document.getString("imageBase64");
 
-        return new AdminEmergency(
+        return emergencyFromSnapshot(
                 document.getId(),
                 document.getString("municipality"),
-                lat == null ? 0 : lat,
-                lng == null ? 0 : lng,
+                lat,
+                lng,
                 document.getString("phoneNumber"),
                 document.getString("reportedBy"),
+                document.getString("reportedByProfileImageBase64"),
                 document.getString("status"),
-                hasImage != null && hasImage,
-                imageBase64 == null ? "" : imageBase64,
+                hasImage,
+                imageBase64,
                 getTimestampMillis(document));
     }
 
+    private AdminEmergency emergencyFromSnapshot(String id,
+                                                 String municipality,
+                                                 Double latitude,
+                                                 Double longitude,
+                                                 String phoneNumber,
+                                                 String reportedBy,
+                                                 String reportedByProfileImageBase64,
+                                                 String status,
+                                                 Boolean hasImage,
+                                                 String imageBase64,
+                                                 long timestamp) {
+        return new AdminEmergency(
+                id,
+                municipality,
+                latitude == null ? 0 : latitude,
+                longitude == null ? 0 : longitude,
+                phoneNumber,
+                reportedBy,
+                reportedByProfileImageBase64 == null ? "" : reportedByProfileImageBase64,
+                status,
+                hasImage != null && hasImage,
+                imageBase64 == null ? "" : imageBase64,
+                timestamp);
+    }
+
     private long getTimestampMillis(QueryDocumentSnapshot document) {
-        Object timestampObj = document.get("timestamp");
+        return getTimestampMillis(document.get("timestamp"));
+    }
+
+    private long getTimestampMillis(Object timestampObj) {
         if (timestampObj instanceof Long) {
             return (Long) timestampObj;
         }

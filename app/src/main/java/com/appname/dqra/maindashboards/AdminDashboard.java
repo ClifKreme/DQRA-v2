@@ -28,7 +28,10 @@ import android.os.VibratorManager;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -41,31 +44,25 @@ import androidx.core.content.ContextCompat;
 import androidx.lifecycle.ViewModelProvider;
 import com.appname.dqra.AdminProfileActivity;
 import com.appname.dqra.BaseActivity;
-import com.appname.dqra.admin.AdminDashboardUiState;
-import com.appname.dqra.admin.AdminDashboardViewModel;
-import com.appname.dqra.admin.AdminEmergency;
-import com.appname.dqra.admin.AdminEmergencyStats;
-import com.appname.dqra.admin.AdminEmergencyStreamState;
+import com.appname.dqra.viewmodel.AdminDashboardUiState;
+import com.appname.dqra.viewmodel.AdminDashboardViewModel;
+import com.appname.dqra.viewmodel.AdminEmergency;
+import com.appname.dqra.viewmodel.AdminEmergencyStats;
+import com.appname.dqra.viewmodel.AdminEmergencyStreamState;
 import com.appname.dqra.EmergencyLogsAdapter;
+import com.appname.dqra.image.Base64ImageHelper;
 import com.appname.dqra.image.FullScreenImageActivity;
 import com.appname.dqra.listeners.AlertService;
 import com.appname.dqra.listeners.FirestoreService;
 import com.appname.dqra.LoginActivity;
 import com.appname.dqra.R;
+import com.appname.dqra.repository.AdminDashboardRepository;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.firestore.CollectionReference;
-import com.google.firebase.firestore.FieldValue;
-import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
-import com.google.firebase.firestore.QueryDocumentSnapshot;
-import com.google.firebase.firestore.SetOptions;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 
 public class AdminDashboard extends BaseActivity {
@@ -101,12 +98,13 @@ public class AdminDashboard extends BaseActivity {
     private static final int PERMISSION_STEP_DND = 3;
     private static final int PERMISSION_STEP_NOTIFICATION_LISTENER = 4;
     private static final int PERMISSION_STEP_DONE = 5;
+    private static final long EMERGENCY_ANIMATION_DURATION_MS = 260;
     private int permissionFlowStep = PERMISSION_STEP_DONE;
     private boolean permissionFlowActive = false;
     private boolean waitingForPermissionSettings = false;
 
     // UI elements
-    private Button btnViewMap, btnLogout, btnLogs, btnStopSound, btnCallSender;
+    private Button btnViewMap, btnLogout, btnStopSound, btnCallSender;
     private Button btnConfirm, btnReject, btnViewImage;
     private Button btnShareMessenger; // ✅ NEW
     private TextView tvEmergencyAlert;
@@ -114,6 +112,7 @@ public class AdminDashboard extends BaseActivity {
     private TextView tvStatusIcon, tvEmergencyTime, tvSenderName;
     private TextView tvEmergencyActionsHeader, tvInfoHeader;
     private TextView tvAdminMunicipality;
+    private ImageView ivSenderProfile;
 
     private CardView cardEmergencyStatus;
 
@@ -127,15 +126,12 @@ public class AdminDashboard extends BaseActivity {
 
     // Image data
     private String currentEmergencyImageBase64 = "";
+    private String currentReporterProfileImageBase64 = "";
     private boolean currentEmergencyHasImage = false;
 
-    // Firebase
-    private FirebaseAuth auth;
-    private FirebaseFirestore db;
-    private CollectionReference emergencyLocationRef;
+    // Dashboard state
     private String adminMunicipality = "";
     private String currentEmergencyId = "";
-    private ListenerRegistration emergencyLocationListener;
 
     // Alert system
     private MediaPlayer mediaPlayer;
@@ -181,6 +177,7 @@ public class AdminDashboard extends BaseActivity {
                         currentEmergencyId = "messenger_" + System.currentTimeMillis();
                         currentEmergencyHasImage = false;
                         currentEmergencyImageBase64 = "";
+                        currentReporterProfileImageBase64 = "";
 
                         saveCurrentEmergencyToPrefs();
                         markEmergencyAsAlerted(currentEmergencyId);
@@ -208,7 +205,6 @@ public class AdminDashboard extends BaseActivity {
 
         viewModel = new ViewModelProvider(this).get(AdminDashboardViewModel.class);
         createNotificationChannel();
-        initializeFirebase();
         observeViewModel();
         loadAlertedEmergencies();
         loadCurrentEmergencyFromPrefs();
@@ -271,8 +267,7 @@ public class AdminDashboard extends BaseActivity {
             }
             fetchAdminMunicipality();
 
-            if (adminMunicipality != null && !adminMunicipality.isEmpty() &&
-                    (emergencyLocationListener == null)) {
+            if (adminMunicipality != null && !adminMunicipality.isEmpty()) {
                 listenForEmergencyLocationChanges();
             }
 
@@ -333,10 +328,6 @@ public class AdminDashboard extends BaseActivity {
             }
         }
 
-        if (emergencyLocationListener != null) {
-            emergencyLocationListener.remove();
-            emergencyLocationListener = null;
-        }
         if (websiteNotificationListener != null) {
             websiteNotificationListener.remove();
             websiteNotificationListener = null;
@@ -428,16 +419,14 @@ public class AdminDashboard extends BaseActivity {
             String sourceText = isMessengerEmergency(currentEmergencyId) ? "\n📱 From Messenger" : "";
 
             tvEmergencyAlert.setText(String.format(Locale.getDefault(),
-                    "%s\n\n" +
-                            "Reported By: %s\n" +
-                            "Contact: %s\n" +
-                            "Status: %s%s%s",
-                    statusText, Reported, Phone, currentEmergencyStatus.toUpperCase(), imageText, sourceText));
+                    "%s\n\nStatus: %s%s%s",
+                    statusText, currentEmergencyStatus.toUpperCase(), imageText, sourceText));
 
             btnViewMap.setVisibility(View.VISIBLE);
             btnCallSender.setVisibility(View.VISIBLE);
             btnShareMessenger.setVisibility(View.VISIBLE); // ✅ NEW
             btnViewImage.setVisibility(currentEmergencyHasImage ? View.VISIBLE : View.GONE);
+            updateSenderProfileImage();
 
             Button btnComplete = findViewById(R.id.btnComplete);
 
@@ -719,27 +708,27 @@ public class AdminDashboard extends BaseActivity {
     }
 
     private void listenForWebsiteNotifications() {
-        websiteNotificationListener = db.collection("website_notifications")
-                .whereEqualTo("municipality", TARGET_MUNICIPALITY)
-                .whereEqualTo("status", "unread")
-                .addSnapshotListener((queryDocumentSnapshots, error) -> {
-                    if (error != null) {
-                        Log.e(TAG, "Website notification listen failed: " + error.getMessage());
-                        return;
+        if (websiteNotificationListener != null) {
+            websiteNotificationListener.remove();
+        }
+
+        websiteNotificationListener = viewModel.listenForWebsiteNotifications(
+                TARGET_MUNICIPALITY,
+                new AdminDashboardRepository.WebsiteNotificationListener() {
+                    @Override
+                    public void onNotification() {
+                        Log.d(TAG, "New website notification");
+                        handleWebsiteNotification();
                     }
 
-                    if (queryDocumentSnapshots != null && !queryDocumentSnapshots.isEmpty()) {
-                        Log.d(TAG, "New website notifications: " + queryDocumentSnapshots.size());
-
-                        for (QueryDocumentSnapshot document : queryDocumentSnapshots) {
-                            handleWebsiteNotification(document);
-                            document.getReference().update("status", "read");
-                        }
+                    @Override
+                    public void onError(Exception exception) {
+                        Log.e(TAG, "Website notification listen failed: " + exception.getMessage());
                     }
                 });
     }
 
-    private void handleWebsiteNotification(QueryDocumentSnapshot document) {
+    private void handleWebsiteNotification() {
         String url = "https://fsis.e-bfp.com/";
 
         showNotification("Website Access", "A user has accessed the website for inquiries", NOTIFICATION_ID_WEBSITE);
@@ -774,6 +763,7 @@ public class AdminDashboard extends BaseActivity {
         emergencyMunicipality = sharedPreferences.getString(CURRENT_EMERGENCY_MUNICIPALITY_KEY, "");
         currentEmergencyStatus = sharedPreferences.getString(CURRENT_EMERGENCY_STATUS_KEY, STATUS_PENDING);
         currentEmergencyHasImage = sharedPreferences.getBoolean("current_emergency_has_image", false);
+        currentReporterProfileImageBase64 = "";
 
         Log.d(TAG, "Loaded emergency from preferences: " + currentEmergencyId + " with status: " + currentEmergencyStatus);
 
@@ -814,13 +804,9 @@ public class AdminDashboard extends BaseActivity {
     private void logoutUser() {
         stopEmergencyAlerts();
 
-        if (emergencyLocationListener != null) {
-            emergencyLocationListener.remove();
-        }
-
         clearCurrentEmergencyFromPrefs();
 
-        auth.signOut();
+        viewModel.signOut();
         startActivity(new Intent(this, LoginActivity.class)
                 .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
         finish();
@@ -845,12 +831,6 @@ public class AdminDashboard extends BaseActivity {
             layoutResolved.setEnabled(enabled);
             layoutResolved.setAlpha(enabled ? 1.0f : 0.5f);
         }
-    }
-
-    private void initializeFirebase() {
-        auth = FirebaseAuth.getInstance();
-        db = FirebaseFirestore.getInstance();
-        emergencyLocationRef = db.collection("emergency_locations");
     }
 
     @Override
@@ -900,7 +880,7 @@ public class AdminDashboard extends BaseActivity {
             case EMPTY:
                 Log.d(TAG, "No emergency documents found for municipality: " + adminMunicipality);
                 if (currentEmergencyId == null || !currentEmergencyId.startsWith("messenger_")) {
-                    clearEmergencyUI();
+                    clearCurrentEmergency();
                 }
                 break;
             case EMERGENCY:
@@ -1012,7 +992,6 @@ public class AdminDashboard extends BaseActivity {
     private void initializeUI() {
         btnViewMap = findViewById(R.id.btnViewMap);
         btnLogout = findViewById(R.id.btnLogout);
-        btnLogs = findViewById(R.id.btnLogs);
         btnStopSound = findViewById(R.id.btnStopSound);
         tvEmergencyAlert = findViewById(R.id.tvEmergencyAlert);
         btnCallSender = findViewById(R.id.btnCallSender);
@@ -1032,6 +1011,7 @@ public class AdminDashboard extends BaseActivity {
         tvEmergencyActionsHeader = findViewById(R.id.tvEmergencyActionsHeader);
         tvInfoHeader = findViewById(R.id.tvInfoHeader);
         tvAdminMunicipality = findViewById(R.id.tvAdminMunicipality);
+        ivSenderProfile = findViewById(R.id.ivSenderProfile);
         cardEmergencyStatus = findViewById(R.id.cardEmergencyStatus);
 
         setupStatisticsClickListeners();
@@ -1060,9 +1040,6 @@ public class AdminDashboard extends BaseActivity {
         });
 
         btnLogout.setOnClickListener(v -> logoutUser());
-        if (btnLogs != null) {
-            btnLogs.setOnClickListener(v -> redirectToFilteredLogs("all"));
-        }
         btnViewMap.setOnClickListener(v -> openGoogleMaps());
         btnCallSender.setOnClickListener(v -> callOperation());
         btnViewImage.setOnClickListener(v -> showEmergencyImage());
@@ -1237,64 +1214,41 @@ public class AdminDashboard extends BaseActivity {
             return;
         }
 
-        Map<String, Object> updates = new HashMap<>();
-        updates.put("status", STATUS_RESOLVED);
-        updates.put("resolvedAt", FieldValue.serverTimestamp());
-        updates.put("resolvedBy", auth.getCurrentUser().getUid());
+        viewModel.resolveEmergency(emergencyId);
+        currentEmergencyStatus = STATUS_RESOLVED;
+        saveCurrentEmergencyToPrefs();
 
-        db.collection("emergency_locations")
-                .document(emergencyId)
-                .update(updates)
-                .addOnSuccessListener(aVoid -> {
-                    currentEmergencyStatus = STATUS_RESOLVED;
-                    saveCurrentEmergencyToPrefs();
+        runOnUiThread(() -> {
+            Toast.makeText(this, "Emergency marked as resolved", Toast.LENGTH_SHORT).show();
 
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "✓ Emergency marked as resolved", Toast.LENGTH_SHORT).show();
+            tvEmergencyAlert.setText(String.format(Locale.getDefault(),
+                    "EMERGENCY RESOLVED\n\n" +
+                            "Reported By: %s\n" +
+                            "Contact: %s\n" +
+                            "Municipality: %s\n" +
+                            "Status: RESOLVED",
+                    Reported, Phone, emergencyMunicipality));
 
-                        tvEmergencyAlert.setText(String.format(Locale.getDefault(),
-                                "✓ EMERGENCY RESOLVED\n\n" +
-                                        "Reported By: %s\n" +
-                                        "Contact: %s\n" +
-                                        "Municipality: %s\n" +
-                                        "Status: RESOLVED",
-                                Reported, Phone, emergencyMunicipality));
+            Button btnComplete = findViewById(R.id.btnComplete);
+            if (btnComplete != null) {
+                btnComplete.setVisibility(View.GONE);
+            }
+            btnConfirm.setVisibility(View.GONE);
+            btnReject.setVisibility(View.GONE);
+            btnStopSound.setVisibility(View.GONE);
+            btnShareMessenger.setVisibility(View.GONE);
 
-                        Button btnComplete = findViewById(R.id.btnComplete);
-                        if (btnComplete != null) {
-                            btnComplete.setVisibility(View.GONE);
-                        }
-                        btnConfirm.setVisibility(View.GONE);
-                        btnReject.setVisibility(View.GONE);
-                        btnStopSound.setVisibility(View.GONE);
-                        btnShareMessenger.setVisibility(View.GONE); // ✅ NEW
+            updateEmergencyStatistics();
 
-                        updateEmergencyStatistics();
+            showNotification("Emergency Resolved",
+                    "Emergency from " + Reported + " has been marked as resolved",
+                    NOTIFICATION_ID_EMERGENCY_RESOLVED);
 
-                        showNotification("Emergency Resolved",
-                                "Emergency from " + Reported + " has been marked as resolved",
-                                NOTIFICATION_ID_EMERGENCY_RESOLVED);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                clearCurrentEmergency();
+            }, 3000);
+        });
 
-                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            clearCurrentEmergency();
-                        }, 3000);
-                    });
-
-                    Log.d(TAG, "Emergency resolved successfully: " + emergencyId);
-                })
-                .addOnFailureListener(e -> {
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "Failed to resolve: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-
-                        Button btnComplete = findViewById(R.id.btnComplete);
-                        if (btnComplete != null) {
-                            btnComplete.setEnabled(true);
-                            btnComplete.setText("✓ Mark as Resolved");
-                        }
-                    });
-
-                    Log.e(TAG, "Error resolving emergency: " + e.getMessage());
-                });
     }
 
     private void updateEmergencyStatistics() {
@@ -1312,6 +1266,7 @@ public class AdminDashboard extends BaseActivity {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (permissionFlowActive &&
@@ -1394,6 +1349,7 @@ public class AdminDashboard extends BaseActivity {
 
                         currentEmergencyHasImage = false;
                         currentEmergencyImageBase64 = "";
+                        currentReporterProfileImageBase64 = "";
 
                         saveCurrentEmergencyToPrefs();
                         markEmergencyAsAlerted(currentEmergencyId);
@@ -1436,24 +1392,27 @@ public class AdminDashboard extends BaseActivity {
     }
 
     private void fetchEmergencyImageData(String emergencyId) {
-        db.collection("emergency_locations")
-                .document(emergencyId)
-                .get()
-                .addOnSuccessListener(documentSnapshot -> {
-                    if (documentSnapshot.exists()) {
-                        Boolean hasImage = documentSnapshot.getBoolean("hasImage");
-                        String imageBase64 = documentSnapshot.getString("imageBase64");
-
-                        currentEmergencyHasImage = hasImage != null ? hasImage : false;
-                        currentEmergencyImageBase64 = imageBase64 != null ? imageBase64 : "";
+        viewModel.fetchEmergencyImageData(emergencyId,
+                new AdminDashboardRepository.ValueCallback<AdminEmergency>() {
+                    @Override
+                    public void onSuccess(AdminEmergency emergency) {
+                        currentEmergencyHasImage = emergency.hasImage();
+                        currentEmergencyImageBase64 = emergency.getImageBase64() != null
+                                ? emergency.getImageBase64() : "";
+                        currentReporterProfileImageBase64 = emergency.getReportedByProfileImageBase64() != null
+                                ? emergency.getReportedByProfileImageBase64() : "";
 
                         runOnUiThread(() -> {
-                            btnViewImage.setVisibility(currentEmergencyHasImage ? View.VISIBLE : View.GONE);
+                            btnViewImage.setVisibility(currentEmergencyHasImage
+                                    ? View.VISIBLE : View.GONE);
+                            updateSenderProfileImage();
                         });
                     }
-                })
-                .addOnFailureListener(e -> {
-                    Log.e(TAG, "Error fetching image data: " + e.getMessage());
+
+                    @Override
+                    public void onError(Exception exception) {
+                        Log.e(TAG, "Error fetching image data: " + exception.getMessage());
+                    }
                 });
     }
 
@@ -1477,113 +1436,6 @@ public class AdminDashboard extends BaseActivity {
         Log.d(TAG, "Starting ViewModel listener for emergencies in: " + adminMunicipality);
         viewModel.setCurrentEmergencyId(currentEmergencyId);
         viewModel.startEmergencyListener();
-    }
-
-    private void listenForEmergencyLocationChangesLegacy() {
-        if (adminMunicipality == null || adminMunicipality.isEmpty()) {
-            Log.e(TAG, "Cannot listen for emergencies: admin municipality is empty");
-            return;
-        }
-
-        Log.d(TAG, "Starting listener for emergencies in: " + adminMunicipality);
-
-        if (emergencyLocationListener != null) {
-            emergencyLocationListener.remove();
-        }
-
-        emergencyLocationListener = emergencyLocationRef
-                .whereEqualTo("municipality", adminMunicipality)
-                .addSnapshotListener((queryDocumentSnapshots, error) -> {
-                    if (error != null) {
-                        Log.e(TAG, "Listen failed: " + error);
-                        return;
-                    }
-
-                    if (queryDocumentSnapshots == null || queryDocumentSnapshots.isEmpty()) {
-                        Log.d(TAG, "No emergency documents found for municipality: " + adminMunicipality);
-                        if (currentEmergencyId == null || !currentEmergencyId.startsWith("messenger_")) {
-                            clearEmergencyUI();
-                        } else {
-                            Log.d(TAG, "Keeping Messenger emergency despite no Firestore documents");
-                        }
-                        return;
-                    }
-
-                    boolean currentEmergencyStillExists = false;
-
-                    QueryDocumentSnapshot mostRecentPendingEmergency = null;
-                    QueryDocumentSnapshot currentEmergencyDoc = null;
-                    long mostRecentTimestamp = 0;
-
-                    for (QueryDocumentSnapshot document : queryDocumentSnapshots) {
-                        try {
-                            String status = document.getString("status");
-                            String emergencyId = document.getId();
-
-                            Object timestampObj = document.get("timestamp");
-                            long timestamp = 0;
-
-                            if (timestampObj instanceof Long) {
-                                timestamp = (Long) timestampObj;
-                            } else if (timestampObj instanceof com.google.firebase.Timestamp) {
-                                timestamp = ((com.google.firebase.Timestamp) timestampObj).toDate().getTime();
-                            }
-
-                            // ✅ Skip old emergencies from dashboard but keep in DB for history logs
-                            boolean isOldEmergency = timestamp > 0 &&
-                                    System.currentTimeMillis() - timestamp > 10 * 60 * 60 * 1000;
-
-                            if (isOldEmergency && !emergencyId.equals(currentEmergencyId)) {
-                                Log.d(TAG, "Skipping old emergency from dashboard (>10h): " + emergencyId);
-                                continue;
-                            }
-
-                            if (STATUS_PENDING.equals(status)) {
-                                if (timestamp > mostRecentTimestamp) {
-                                    mostRecentTimestamp = timestamp;
-                                    mostRecentPendingEmergency = document;
-                                }
-                            }
-
-                            if (emergencyId.equals(currentEmergencyId)) {
-                                currentEmergencyDoc = document;
-                                currentEmergencyStillExists = true;
-                            }
-
-                        } catch (Exception e) {
-                            Log.e(TAG, "Error processing emergency document: " + e.getMessage(), e);
-                        }
-                    }
-
-                    if (!currentEmergencyStillExists && currentEmergencyId != null && !currentEmergencyId.isEmpty()) {
-                        if (!currentEmergencyId.startsWith("messenger_")) {
-                            Log.d(TAG, "Current Firestore emergency no longer exists: " + currentEmergencyId);
-                            clearCurrentEmergency();
-                            return;
-                        } else {
-                            Log.d(TAG, "Keeping Messenger emergency: " + currentEmergencyId);
-                        }
-                    }
-
-                    if (currentEmergencyDoc != null) {
-                        String newStatus = currentEmergencyDoc.getString("status");
-                        if (!newStatus.equals(currentEmergencyStatus)) {
-                            currentEmergencyStatus = newStatus;
-                            Log.d(TAG, "Emergency status updated: " + currentEmergencyId + " -> " + newStatus);
-                            restoreEmergencyUI();
-                            saveCurrentEmergencyToPrefs();
-                        }
-                    }
-
-                    if (mostRecentPendingEmergency != null) {
-                        if (currentEmergencyId != null && currentEmergencyId.startsWith("messenger_") &&
-                                STATUS_PENDING.equals(currentEmergencyStatus)) {
-                            Log.d(TAG, "Skipping Firestore emergency - Messenger emergency is active");
-                        } else {
-                            processEmergencyDocument(mostRecentPendingEmergency);
-                        }
-                    }
-                });
     }
 
     private void clearCurrentEmergency() {
@@ -1611,6 +1463,7 @@ public class AdminDashboard extends BaseActivity {
             emergencyMunicipality = "";
             currentEmergencyStatus = STATUS_PENDING;
             currentEmergencyImageBase64 = "";
+            currentReporterProfileImageBase64 = "";
             currentEmergencyHasImage = false;
 
             clearCurrentEmergencyFromPrefs();
@@ -1622,6 +1475,10 @@ public class AdminDashboard extends BaseActivity {
 
     private void clearEmergencyUI() {
         runOnUiThread(() -> {
+            stopEmergencyAlerts();
+            clearEmergencyNotifications();
+            resetEmergencyAnimations();
+
             tvEmergencyAlert.setText("No active emergencies");
             btnViewMap.setVisibility(View.GONE);
             btnCallSender.setVisibility(View.GONE);
@@ -1631,8 +1488,36 @@ public class AdminDashboard extends BaseActivity {
             btnViewImage.setVisibility(View.GONE);
             btnShareMessenger.setVisibility(View.GONE); // ✅ NEW
 
+            tvSenderName.setText("");
+            resetSenderProfileImage();
+
             Log.d(TAG, "Emergency UI cleared");
         });
+    }
+
+    private void updateSenderProfileImage() {
+        if (ivSenderProfile == null) {
+            return;
+        }
+
+        if (currentReporterProfileImageBase64 != null
+                && !currentReporterProfileImageBase64.trim().isEmpty()
+                && Base64ImageHelper.loadBase64IntoImageView(ivSenderProfile, currentReporterProfileImageBase64)) {
+            ivSenderProfile.clearColorFilter();
+            ivSenderProfile.setVisibility(View.VISIBLE);
+            return;
+        }
+
+        resetSenderProfileImage();
+    }
+
+    private void resetSenderProfileImage() {
+        if (ivSenderProfile == null) {
+            return;
+        }
+        ivSenderProfile.setImageResource(R.drawable.ic_profile_placeholder);
+        ivSenderProfile.clearColorFilter();
+        ivSenderProfile.setVisibility(View.VISIBLE);
     }
 
     private void processEmergency(AdminEmergency emergency) {
@@ -1657,6 +1542,8 @@ public class AdminDashboard extends BaseActivity {
                 currentEmergencyStatus = emergency.getStatus() != null ? emergency.getStatus() : STATUS_PENDING;
                 currentEmergencyHasImage = emergency.hasImage();
                 currentEmergencyImageBase64 = emergency.getImageBase64() != null ? emergency.getImageBase64() : "";
+                currentReporterProfileImageBase64 = emergency.getReportedByProfileImageBase64() != null
+                        ? emergency.getReportedByProfileImageBase64() : "";
 
                 Log.d(TAG, "Processing emergency ID: " + emergencyId + ", isNew: " + isNewEmergency +
                         ", status: " + currentEmergencyStatus + ", hasImage: " + currentEmergencyHasImage);
@@ -1677,55 +1564,6 @@ public class AdminDashboard extends BaseActivity {
             }
         } catch (Exception e) {
             Log.e(TAG, "Error processing emergency: " + e.getMessage(), e);
-        }
-    }
-
-    private void processEmergencyDocument(QueryDocumentSnapshot document) {
-        try {
-            Double lat = document.getDouble("latitude");
-            Double lng = document.getDouble("longitude");
-            String municipality = document.getString("municipality");
-            String phonenumber = document.getString("phoneNumber");
-            String reportedby = document.getString("reportedBy");
-            String status = document.getString("status");
-            String emergencyId = document.getId();
-
-            Boolean hasImage = document.getBoolean("hasImage");
-            String imageBase64 = document.getString("imageBase64");
-
-            if (lat != null && lng != null && municipality != null &&
-                    municipality.equals(adminMunicipality)) {
-
-                boolean isNewEmergency = !emergencyId.equals(currentEmergencyId);
-
-                currentEmergencyId = emergencyId;
-                emergencyLatitude = lat;
-                emergencyLongitude = lng;
-                Phone = phonenumber;
-                Reported = reportedby != null ? reportedby : "Unknown";
-                emergencyMunicipality = municipality;
-                currentEmergencyStatus = status != null ? status : STATUS_PENDING;
-                currentEmergencyHasImage = hasImage != null ? hasImage : false;
-                currentEmergencyImageBase64 = imageBase64 != null ? imageBase64 : "";
-
-                Log.d(TAG, "Processing emergency ID: " + emergencyId + ", isNew: " + isNewEmergency +
-                        ", status: " + currentEmergencyStatus + ", hasImage: " + currentEmergencyHasImage);
-
-                updateAdminLocation();
-
-                if (isNewEmergency && STATUS_PENDING.equals(currentEmergencyStatus) && !isEmergencyAlreadyAlerted(emergencyId)) {
-                    Log.d(TAG, "New pending emergency found in " + municipality + ", ID: " + emergencyId);
-                    markEmergencyAsAlerted(emergencyId);
-                    showEmergencyAlert();
-                } else {
-                    Log.d(TAG, "Updating UI for existing/processed emergency: " + emergencyId);
-                    updateEmergencyUI();
-                }
-
-                saveCurrentEmergencyToPrefs();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error processing emergency document: " + e.getMessage(), e);
         }
     }
 
@@ -1753,15 +1591,14 @@ public class AdminDashboard extends BaseActivity {
 
             tvEmergencyAlert.setText(String.format(Locale.getDefault(),
                     "%s\n\n" +
-                            "Reported By: %s\n" +
-                            "Contact: %s\n" +
                             "Municipality: %s%s%s",
-                    statusText, Reported, Phone, emergencyMunicipality, imageText, sourceText));
+                    statusText, emergencyMunicipality, imageText, sourceText));
 
             btnViewMap.setVisibility(View.VISIBLE);
             btnCallSender.setVisibility(View.VISIBLE);
             btnShareMessenger.setVisibility(View.VISIBLE); // ✅ NEW
             btnViewImage.setVisibility(currentEmergencyHasImage ? View.VISIBLE : View.GONE);
+            updateSenderProfileImage();
 
             Button btnComplete = findViewById(R.id.btnComplete);
 
@@ -1814,17 +1651,95 @@ public class AdminDashboard extends BaseActivity {
             btnStopSound.setVisibility(View.VISIBLE);
 
             btnViewImage.setVisibility(currentEmergencyHasImage ? View.VISIBLE : View.GONE);
+            updateSenderProfileImage();
 
             if (tvEmergencyActionsHeader != null) {
                 tvEmergencyActionsHeader.setVisibility(View.VISIBLE);
             }
 
+            animateEmergencyReceived();
             playEmergencyAlerts();
             showNotification("Emergency Alert", "New emergency from " + Reported, NOTIFICATION_ID_EMERGENCY_ALERT);
 
             updateEmergencyStatistics();
             setStatisticsCardsEnabled(false);
         });
+    }
+
+    private void animateEmergencyReceived() {
+        animateEmergencyCard();
+
+        long delay = 60;
+        animateViewIn(tvEmergencyActionsHeader, delay);
+        animateViewIn(btnConfirm, delay + 40);
+        animateViewIn(btnReject, delay + 80);
+        animateViewIn(btnStopSound, delay + 120);
+        animateViewIn(btnViewMap, delay + 160);
+        animateViewIn(btnCallSender, delay + 200);
+        animateViewIn(btnShareMessenger, delay + 240);
+        animateViewIn(btnViewImage, delay + 280);
+    }
+
+    private void animateEmergencyCard() {
+        if (cardEmergencyStatus == null) {
+            return;
+        }
+
+        cardEmergencyStatus.animate().cancel();
+        cardEmergencyStatus.setAlpha(0.85f);
+        cardEmergencyStatus.setScaleX(0.97f);
+        cardEmergencyStatus.setScaleY(0.97f);
+        cardEmergencyStatus.setTranslationY(18f);
+        cardEmergencyStatus.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .translationY(0f)
+                .setDuration(EMERGENCY_ANIMATION_DURATION_MS)
+                .setInterpolator(new OvershootInterpolator(0.9f))
+                .start();
+    }
+
+    private void resetEmergencyAnimations() {
+        View[] animatedViews = {
+                cardEmergencyStatus,
+                tvEmergencyActionsHeader,
+                btnConfirm,
+                btnReject,
+                btnStopSound,
+                btnViewMap,
+                btnCallSender,
+                btnShareMessenger,
+                btnViewImage
+        };
+
+        for (View view : animatedViews) {
+            if (view == null) {
+                continue;
+            }
+            view.animate().cancel();
+            view.setAlpha(1f);
+            view.setTranslationY(0f);
+            view.setScaleX(1f);
+            view.setScaleY(1f);
+        }
+    }
+
+    private void animateViewIn(View view, long startDelay) {
+        if (view == null || view.getVisibility() != View.VISIBLE) {
+            return;
+        }
+
+        view.animate().cancel();
+        view.setAlpha(0f);
+        view.setTranslationY(16f);
+        view.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setStartDelay(startDelay)
+                .setDuration(EMERGENCY_ANIMATION_DURATION_MS)
+                .setInterpolator(new DecelerateInterpolator())
+                .start();
     }
 
     private void confirmEmergency(String emergencyId) {
@@ -1862,36 +1777,13 @@ public class AdminDashboard extends BaseActivity {
             return;
         }
 
-        Map<String, Object> updates = new HashMap<>();
-        updates.put("status", STATUS_CONFIRMED);
-        updates.put("confirmedAt", FieldValue.serverTimestamp());
+        viewModel.confirmEmergency(emergencyId);
+        saveCurrentEmergencyToPrefs();
+        Toast.makeText(this, "Emergency confirmed", Toast.LENGTH_SHORT).show();
 
-        db.collection("emergency_locations")
-                .document(emergencyId)
-                .update(updates)
-                .addOnSuccessListener(aVoid -> {
-                    saveCurrentEmergencyToPrefs();
-                    Toast.makeText(this, "Emergency confirmed", Toast.LENGTH_SHORT).show();
-
-                    startImageUpdateListener(emergencyId);
-                    updateEmergencyUI();
-                    updateEmergencyStatistics();
-                })
-                .addOnFailureListener(e -> {
-                    currentEmergencyStatus = previousStatus;
-
-                    Toast.makeText(this, "Failed to confirm: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                    runOnUiThread(() -> {
-                        btnConfirm.setVisibility(View.VISIBLE);
-                        btnReject.setVisibility(View.VISIBLE);
-                        btnStopSound.setVisibility(View.VISIBLE);
-                        setStatisticsCardsEnabled(false);
-
-                        if (STATUS_PENDING.equals(currentEmergencyStatus)) {
-                            playEmergencyAlerts();
-                        }
-                    });
-                });
+        startImageUpdateListener(emergencyId);
+        updateEmergencyUI();
+        updateEmergencyStatistics();
     }
 
     private void rejectEmergency(String emergencyId) {
@@ -1929,34 +1821,11 @@ public class AdminDashboard extends BaseActivity {
             return;
         }
 
-        Map<String, Object> updates = new HashMap<>();
-        updates.put("status", STATUS_REJECTED);
-        updates.put("rejectedAt", FieldValue.serverTimestamp());
-
-        db.collection("emergency_locations")
-                .document(emergencyId)
-                .update(updates)
-                .addOnSuccessListener(aVoid -> {
-                    saveCurrentEmergencyToPrefs();
-                    Toast.makeText(this, "Emergency rejected", Toast.LENGTH_SHORT).show();
-                    updateEmergencyUI();
-                    updateEmergencyStatistics();
-                })
-                .addOnFailureListener(e -> {
-                    currentEmergencyStatus = previousStatus;
-
-                    Toast.makeText(this, "Failed to reject: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-                    runOnUiThread(() -> {
-                        btnConfirm.setVisibility(View.VISIBLE);
-                        btnReject.setVisibility(View.VISIBLE);
-                        btnStopSound.setVisibility(View.GONE);
-                        setStatisticsCardsEnabled(false);
-
-                        if (STATUS_PENDING.equals(currentEmergencyStatus)) {
-                            playEmergencyAlerts();
-                        }
-                    });
-                });
+        viewModel.rejectEmergency(emergencyId);
+        saveCurrentEmergencyToPrefs();
+        Toast.makeText(this, "Emergency rejected", Toast.LENGTH_SHORT).show();
+        updateEmergencyUI();
+        updateEmergencyStatistics();
     }
 
     private void forceKillAllSounds() {
@@ -2005,40 +1874,47 @@ public class AdminDashboard extends BaseActivity {
             return;
         }
 
-        imageUpdateListener = db.collection("emergency_locations")
-                .document(emergencyId)
-                .addSnapshotListener((documentSnapshot, error) -> {
-                    if (error != null) {
-                        Log.e(TAG, "Image update listen failed: " + error.getMessage());
-                        return;
+        imageUpdateListener = viewModel.listenForEmergencyImageData(
+                emergencyId,
+                new AdminDashboardRepository.ValueCallback<AdminEmergency>() {
+                    @Override
+                    public void onSuccess(AdminEmergency emergency) {
+                        boolean imageChanged = emergency.hasImage() != currentEmergencyHasImage ||
+                                (emergency.getImageBase64() != null &&
+                                        !emergency.getImageBase64().equals(currentEmergencyImageBase64));
+                        String latestProfileImage = emergency.getReportedByProfileImageBase64() != null
+                                ? emergency.getReportedByProfileImageBase64() : "";
+                        boolean profileImageChanged = !latestProfileImage.equals(currentReporterProfileImageBase64);
+
+                        if (!imageChanged && !profileImageChanged) {
+                            return;
+                        }
+
+                        currentEmergencyHasImage = emergency.hasImage();
+                        currentEmergencyImageBase64 = emergency.getImageBase64() != null
+                                ? emergency.getImageBase64() : "";
+                        currentReporterProfileImageBase64 = latestProfileImage;
+
+                        Log.d(TAG, "Image update detected for emergency: " + emergencyId +
+                                ", hasImage: " + currentEmergencyHasImage);
+
+                        runOnUiThread(() -> {
+                            btnViewImage.setVisibility(currentEmergencyHasImage ? View.VISIBLE : View.GONE);
+                            updateSenderProfileImage();
+
+                            String statusText = getStatusDisplayText(currentEmergencyStatus);
+                            String imageText = currentEmergencyHasImage ? "\nImage Available" : "";
+                            tvEmergencyAlert.setText(String.format(Locale.getDefault(),
+                                    "%s%s",
+                                    statusText, imageText));
+                        });
+
+                        saveCurrentEmergencyToPrefs();
                     }
 
-                    if (documentSnapshot != null && documentSnapshot.exists()) {
-                        Boolean hasImage = documentSnapshot.getBoolean("hasImage");
-                        String imageBase64 = documentSnapshot.getString("imageBase64");
-
-                        boolean imageChanged = (hasImage != null && hasImage != currentEmergencyHasImage) ||
-                                (imageBase64 != null && !imageBase64.equals(currentEmergencyImageBase64));
-
-                        if (imageChanged) {
-                            currentEmergencyHasImage = hasImage != null ? hasImage : false;
-                            currentEmergencyImageBase64 = imageBase64 != null ? imageBase64 : "";
-
-                            Log.d(TAG, "Image update detected for emergency: " + emergencyId +
-                                    ", hasImage: " + currentEmergencyHasImage);
-
-                            runOnUiThread(() -> {
-                                btnViewImage.setVisibility(currentEmergencyHasImage ? View.VISIBLE : View.GONE);
-
-                                String statusText = getStatusDisplayText(currentEmergencyStatus);
-                                String imageText = currentEmergencyHasImage ? "\n📷 Image Available" : "";
-                                tvEmergencyAlert.setText(String.format(Locale.getDefault(),
-                                        "%s\nPhone: %s\nReported By: %s%s",
-                                        statusText, Phone, Reported, imageText));
-                            });
-
-                            saveCurrentEmergencyToPrefs();
-                        }
+                    @Override
+                    public void onError(Exception exception) {
+                        Log.e(TAG, "Image update listen failed: " + exception.getMessage());
                     }
                 });
     }
@@ -2074,9 +1950,8 @@ public class AdminDashboard extends BaseActivity {
             Log.d(TAG, "Alert already playing, skipping duplicate call");
             return;
         }
-        isPlayingAlert = true;
-
         stopEmergencyAlerts();
+        isPlayingAlert = true;
         ensureEmergencyVolume();
         requestAudioFocus();
 
@@ -2097,6 +1972,7 @@ public class AdminDashboard extends BaseActivity {
             AssetFileDescriptor afd = getResources().openRawResourceFd(R.raw.alert);
             if (afd == null) {
                 Log.e(TAG, "Could not load alert sound file");
+                stopEmergencyAlerts();
                 showFallbackAlert();
                 return;
             }
@@ -2108,6 +1984,10 @@ public class AdminDashboard extends BaseActivity {
             mediaPlayer.setVolume(1.0f, 1.0f);
 
             mediaPlayer.setOnPreparedListener(mp -> {
+                if (!isPlayingAlert) {
+                    Log.d(TAG, "Alert was stopped before MediaPlayer prepared");
+                    return;
+                }
                 mp.start();
                 Log.d(TAG, "MediaPlayer started with ALARM usage");
                 startSoundMonitoring();
@@ -2115,6 +1995,7 @@ public class AdminDashboard extends BaseActivity {
 
             mediaPlayer.setOnErrorListener((mp, what, extra) -> {
                 Log.e(TAG, "MediaPlayer error: " + what + ", " + extra);
+                stopEmergencyAlerts();
                 showFallbackAlert();
                 return false;
             });
@@ -2123,6 +2004,7 @@ public class AdminDashboard extends BaseActivity {
 
         } catch (Exception e) {
             Log.e(TAG, "Error setting up MediaPlayer: " + e.getMessage(), e);
+            stopEmergencyAlerts();
             showFallbackAlert();
         }
 

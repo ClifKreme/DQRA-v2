@@ -12,9 +12,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.appname.dqra.maindashboards.AdminDashboard;
 import com.appname.dqra.model.EmergencyLocation;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.QueryDocumentSnapshot;
+import com.appname.dqra.repository.EmergencyRepository;
 import java.util.ArrayList;
 import java.util.List;
 import android.content.Intent;
@@ -25,8 +23,7 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
     private EmergencyLocationAdapter adapter;
     private List<EmergencyLocation> emergencyList;
 
-    private FirebaseFirestore db;
-    private FirebaseAuth auth;
+    private EmergencyRepository emergencyRepository;
 
     // Status filter
     private String statusFilter = null; // null = show all
@@ -62,9 +59,7 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
         adapter = new EmergencyLocationAdapter(this, emergencyList);
         recyclerView.setAdapter(adapter);
 
-        // Initialize Firebase
-        db = FirebaseFirestore.getInstance();
-        auth = FirebaseAuth.getInstance();
+        emergencyRepository = new EmergencyRepository();
 
         fetchUserMunicipality();
     }
@@ -97,58 +92,20 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
      * Fetch the municipality associated with the current user (admin or rescuer)
      */
     private void fetchUserMunicipality() {
-        String userId = auth.getCurrentUser().getUid();
-        Log.d("AdminActivity", "Fetching data for User ID: " + userId);
+        emergencyRepository.fetchCurrentUserMunicipality(new EmergencyRepository.Callback<String>() {
+            @Override
+            public void onSuccess(String municipality) {
+                Log.d("AdminActivity", "User Municipality: " + municipality);
+                fetchEmergencyLogs(municipality);
+            }
 
-        // First, check in the "admins_with_stations" collection
-        db.collection("admins_with_stations").document(userId)
-                .get()
-                .addOnSuccessListener(documentSnapshot -> {
-                    if (documentSnapshot.exists()) {
-                        String municipality = documentSnapshot.getString("municipality");
-                        Log.d("AdminActivity", "Admin Municipality: " + municipality);
-
-                        if (municipality != null) {
-                            fetchEmergencyLogs(municipality);
-                        } else {
-                            Toast.makeText(this, "Error: Municipality not set for admin!", Toast.LENGTH_SHORT).show();
-                        }
-                    } else {
-                        // If not an admin, check if user is a rescuer
-                        fetchRescuerMunicipality(userId);
-                    }
-                })
-                .addOnFailureListener(e -> {
-                    Log.e("AdminActivity", "Error fetching admin data", e);
-                    Toast.makeText(this, "Failed to load admin details!", Toast.LENGTH_SHORT).show();
-                });
-    }
-
-    /**
-     * Fallback method to check if user is a rescuer and fetch their municipality
-     */
-    private void fetchRescuerMunicipality(String userId) {
-        db.collection("rescuers").document(userId)
-                .get()
-                .addOnSuccessListener(documentSnapshot -> {
-                    if (documentSnapshot.exists()) {
-                        String municipality = documentSnapshot.getString("municipality");
-                        Log.d("AdminActivity", "Rescuer Municipality: " + municipality);
-
-                        if (municipality != null) {
-                            fetchEmergencyLogs(municipality);
-                        } else {
-                            Toast.makeText(this, "Error: Municipality not set for rescuer!", Toast.LENGTH_SHORT).show();
-                        }
-                    } else {
-                        // User not found in either collection
-                        Toast.makeText(this, "Error: User not found in any collection!", Toast.LENGTH_SHORT).show();
-                    }
-                })
-                .addOnFailureListener(e -> {
-                    Log.e("AdminActivity", "Error fetching rescuer data", e);
-                    Toast.makeText(this, "Failed to load rescuer details!", Toast.LENGTH_SHORT).show();
-                });
+            @Override
+            public void onError(Exception exception) {
+                Log.e("AdminActivity", "Error fetching user municipality", exception);
+                Toast.makeText(EmergencyLogsAdapter.this,
+                        exception.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     /**
@@ -158,43 +115,31 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
         Log.d("AdminActivity", "Fetching reports for Municipality: " + municipality +
                 ", Filter: " + (statusFilter != null ? statusFilter : "all"));
 
-        // Build query based on filter
-        com.google.firebase.firestore.Query query = db.collection("emergency_locations")
-                .whereEqualTo("municipality", municipality);
+        emergencyRepository.fetchEmergencyLogs(municipality, statusFilter,
+                new EmergencyRepository.Callback<List<EmergencyLocation>>() {
+                    @Override
+                    public void onSuccess(List<EmergencyLocation> emergencies) {
+                        emergencyList.clear();
+                        emergencyList.addAll(emergencies);
 
-        // Add status filter if specified
-        if (statusFilter != null) {
-            query = query.whereEqualTo("status", statusFilter);
-        }
+                        Log.d("AdminActivity", "Total Reports Found: " + emergencyList.size());
 
-        // Execute query
-        query.get()
-                .addOnSuccessListener(queryDocumentSnapshots -> {
-                    emergencyList.clear();
-
-                    for (QueryDocumentSnapshot document : queryDocumentSnapshots) {
-                        EmergencyLocation emergency = document.toObject(EmergencyLocation.class);
-                        emergencyList.add(emergency);
-                    }
-
-                    Log.d("AdminActivity", "Total Reports Found: " + emergencyList.size());
-
-                    // Show message if no results
-                    if (emergencyList.isEmpty()) {
-                        String message;
-                        if (statusFilter != null) {
-                            message = "No " + statusFilter + " emergencies found";
-                        } else {
-                            message = "No emergency reports found";
+                        if (emergencyList.isEmpty()) {
+                            String message = statusFilter != null
+                                    ? "No " + statusFilter + " emergencies found"
+                                    : "No emergency reports found";
+                            Toast.makeText(EmergencyLogsAdapter.this, message, Toast.LENGTH_SHORT).show();
                         }
-                        Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
+
+                        adapter.notifyDataSetChanged();
                     }
 
-                    adapter.notifyDataSetChanged();
-                })
-                .addOnFailureListener(e -> {
-                    Log.e("AdminActivity", "Error fetching emergency reports", e);
-                    Toast.makeText(this, "Failed to load emergency reports!", Toast.LENGTH_SHORT).show();
+                    @Override
+                    public void onError(Exception exception) {
+                        Log.e("AdminActivity", "Error fetching emergency reports", exception);
+                        Toast.makeText(EmergencyLogsAdapter.this,
+                                "Failed to load emergency reports!", Toast.LENGTH_SHORT).show();
+                    }
                 });
     }
 }

@@ -37,25 +37,21 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.appname.dqra.R;
 import com.appname.dqra.model.RescueStation;
+import com.appname.dqra.model.UserProfile;
+import com.appname.dqra.repository.AccountRepository;
+import com.appname.dqra.repository.EmergencyRepository;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.ListenerRegistration;
 
 import java.io.ByteArrayOutputStream;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
     private Context context;
     private List<RescueStation> rescueStationList;
-    private FirebaseFirestore db;
+    private final AccountRepository accountRepository;
+    private final EmergencyRepository emergencyRepository;
     private FusedLocationProviderClient fusedLocationClient;
 
     private static final int LOCATION_PERMISSION_REQUEST_CODE  = 1001;
@@ -78,7 +74,8 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
     public UserAdapter(Context context, List<RescueStation> rescueStationList) {
         this.context = context;
         this.rescueStationList = rescueStationList;
-        this.db = FirebaseFirestore.getInstance();
+        this.accountRepository = new AccountRepository();
+        this.emergencyRepository = new EmergencyRepository();
         this.fusedLocationClient = LocationServices.getFusedLocationProviderClient(context);
         startAutoRefresh();
     }
@@ -356,23 +353,26 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
     private void fetchUserDetailsAndShare(String stationName, String stationLocation,
                                           double lat, double lon) {
-        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
-        if (currentUser == null) {
+        if (!accountRepository.hasCurrentUser()) {
             showShareSheet(createLocationMessage(null, null, stationName, lat, lon),
                     stationName, stationLocation);
             return;
         }
 
-        db.collection("users").document(currentUser.getUid()).get()
-                .addOnSuccessListener(doc -> {
-                    String fullName    = doc.exists() ? doc.getString("fullName") : null;
-                    String phoneNumber = doc.exists() ? doc.getString("phone")    : null;
-                    showShareSheet(createLocationMessage(fullName, phoneNumber, stationName, lat, lon),
-                            stationName, stationLocation);
-                })
-                .addOnFailureListener(e ->
-                        showShareSheet(createLocationMessage(null, null, stationName, lat, lon),
-                                stationName, stationLocation));
+        accountRepository.loadCurrentUserProfile(new AccountRepository.Callback<UserProfile>() {
+            @Override
+            public void onSuccess(UserProfile profile) {
+                showShareSheet(createLocationMessage(profile.getFullName(), profile.getPhone(),
+                                stationName, lat, lon),
+                        stationName, stationLocation);
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                showShareSheet(createLocationMessage(null, null, stationName, lat, lon),
+                        stationName, stationLocation);
+            }
+        });
     }
 
     private void showShareSheet(String message, String stationName, String stationLocation) {
@@ -470,20 +470,21 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
             if (location != null) {
                 double lat = location.getLatitude();
                 double lon = location.getLongitude();
-                FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
-                if (currentUser != null) {
-                    db.collection("users").document(currentUser.getUid()).get()
-                            .addOnSuccessListener(doc -> {
-                                if (doc.exists()) {
-                                    notifyStationAndRescuers(adminId, municipality, lat, lon,
-                                            doc.getString("fullName"), doc.getString("phone"));
-                                } else {
-                                    Toast.makeText(context, "User data not found!", Toast.LENGTH_SHORT).show();
-                                }
-                            })
-                            .addOnFailureListener(e ->
-                                    Toast.makeText(context, "Failed to fetch user data: " + e.getMessage(),
-                                            Toast.LENGTH_SHORT).show());
+                if (accountRepository.hasCurrentUser()) {
+                    accountRepository.loadCurrentUserProfile(new AccountRepository.Callback<UserProfile>() {
+                        @Override
+                        public void onSuccess(UserProfile profile) {
+                            notifyStationAndRescuers(adminId, municipality, lat, lon,
+                                    profile.getFullName(), profile.getPhone(), profile.getId(),
+                                    profile.getProfileImageBase64());
+                        }
+
+                        @Override
+                        public void onError(Exception exception) {
+                            Toast.makeText(context, "Failed to fetch user data: " + exception.getMessage(),
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    });
                 }
             } else {
                 Toast.makeText(context, "Failed to fetch location!", Toast.LENGTH_SHORT).show();
@@ -495,40 +496,43 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
     private void notifyStationAndRescuers(String adminId, String municipality,
                                           double userLat, double userLon,
-                                          String fullName, String phoneNumber) {
-        FirebaseUser currentUser = FirebaseAuth.getInstance().getCurrentUser();
-        if (currentUser == null) {
+                                          String fullName, String phoneNumber, String uid,
+                                          String profileImageBase64) {
+        if (!accountRepository.hasCurrentUser()) {
             Toast.makeText(context, "You must be logged in to send a request.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        db.collection("emergency_locations")
-                .whereEqualTo("reportedBy", fullName)
-                .whereEqualTo("status", "pending")
-                .get()
-                .addOnSuccessListener(querySnapshot -> {
-                    if (!querySnapshot.isEmpty()) {
-                        Toast.makeText(context, "You already have a pending emergency request!",
-                                Toast.LENGTH_LONG).show();
-                    } else {
-                        createEmergencyRequest(adminId, municipality, userLat, userLon,
-                                fullName, phoneNumber, currentUser.getUid());
-                    }
-                })
-                .addOnFailureListener(e ->
-                        Toast.makeText(context, "Error checking requests: " + e.getMessage(),
-                                Toast.LENGTH_SHORT).show());
+        emergencyRepository.hasPendingEmergency(fullName, new EmergencyRepository.Callback<Boolean>() {
+            @Override
+            public void onSuccess(Boolean hasPendingEmergency) {
+                if (hasPendingEmergency) {
+                    Toast.makeText(context, "You already have a pending emergency request!",
+                            Toast.LENGTH_LONG).show();
+                } else {
+                    createEmergencyRequest(adminId, municipality, userLat, userLon,
+                            fullName, phoneNumber, uid, profileImageBase64);
+                }
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                Toast.makeText(context, "Error checking requests: " + exception.getMessage(),
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 
     private void createEmergencyRequest(String adminId, String municipality,
                                         double userLat, double userLon,
-                                        String fullName, String phoneNumber, String uid) {
+                                        String fullName, String phoneNumber, String uid,
+                                        String profileImageBase64) {
         new AlertDialog.Builder(context)
                 .setTitle("Send Emergency Request")
                 .setMessage("Do you want to notify the rescue station of your emergency?")
                 .setPositiveButton("Yes", (dialog, which) ->
                         sendEmergencyToFirestore(adminId, municipality, userLat, userLon,
-                                fullName, phoneNumber, uid))
+                                fullName, phoneNumber, uid, profileImageBase64))
                 .setNegativeButton("Cancel", (dialog, which) ->
                         Toast.makeText(context, "Emergency request cancelled", Toast.LENGTH_SHORT).show())
                 .show();
@@ -536,7 +540,8 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
     private void sendEmergencyToFirestore(String adminId, String municipality,
                                           double userLat, double userLon,
-                                          String fullName, String phoneNumber, String uid) {
+                                          String fullName, String phoneNumber, String uid,
+                                          String profileImageBase64) {
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setView(R.layout.dialog_loading_with_close);
         builder.setCancelable(false);
@@ -544,46 +549,41 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
         loadingDialog.show();
         Button btnClose = loadingDialog.findViewById(R.id.btnCloseLoading);
 
-        Map<String, Object> locationData = new HashMap<>();
-        locationData.put("latitude",      userLat);
-        locationData.put("longitude",     userLon);
-        locationData.put("municipality",  municipality);
-        locationData.put("timestamp",     System.currentTimeMillis());
-        locationData.put("reportedBy",    fullName);
-        locationData.put("reportedByUid", uid);
-        locationData.put("phoneNumber",   phoneNumber);
-        locationData.put("status",        "pending");
-        locationData.put("adminId",       adminId);
-        locationData.put("hasImage",      false);
-
-        db.collection("emergency_locations")
-                .add(locationData)
-                .addOnSuccessListener(documentReference -> {
-                    currentEmergencyDocId = documentReference.getId();
-                    final ListenerRegistration[] listener = new ListenerRegistration[1];
+        emergencyRepository.createEmergencyRequest(adminId, municipality, userLat, userLon,
+                fullName, phoneNumber, uid, profileImageBase64, new EmergencyRepository.Callback<String>() {
+                @Override
+                public void onSuccess(String emergencyDocId) {
+                    currentEmergencyDocId = emergencyDocId;
+                    final EmergencyRepository.ListenerHandle[] listener = new EmergencyRepository.ListenerHandle[1];
 
                     if (btnClose != null) {
                         btnClose.setOnClickListener(v -> {
                             loadingDialog.dismiss();
-                            documentReference.delete();
-                            Toast.makeText(context, "Emergency request cancelled", Toast.LENGTH_SHORT).show();
+                            emergencyRepository.cancelEmergency(emergencyDocId, new EmergencyRepository.Callback<Void>() {
+                                @Override
+                                public void onSuccess(Void value) {
+                                    Toast.makeText(context, "Emergency request cancelled", Toast.LENGTH_SHORT).show();
+                                }
+
+                                @Override
+                                public void onError(Exception exception) {
+                                    Toast.makeText(context, "Failed to cancel request: " + exception.getMessage(),
+                                            Toast.LENGTH_SHORT).show();
+                                }
+                            });
                             if (listener[0] != null) listener[0].remove();
                         });
                     }
 
-                    listener[0] = documentReference.addSnapshotListener((snapshot, e) -> {
-                        if (e != null) {
-                            loadingDialog.dismiss();
-                            Toast.makeText(context, "Error listening for confirmation", Toast.LENGTH_SHORT).show();
-                            return;
-                        }
-                        if (snapshot != null && snapshot.exists()) {
-                            String status = snapshot.getString("status");
+                    listener[0] = emergencyRepository.listenToEmergencyStatus(emergencyDocId,
+                            new EmergencyRepository.EmergencyStatusListener() {
+                        @Override
+                        public void onStatusChanged(String status) {
                             if (status != null) {
                                 switch (status) {
                                     case "confirmed":
                                         loadingDialog.dismiss();
-                                        showConfirmationWithImageOption(documentReference.getId());
+                                        showConfirmationWithImageOption(emergencyDocId);
                                         if (listener[0] != null) listener[0].remove();
                                         break;
                                     case "rejected":
@@ -593,6 +593,18 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                                         break;
                                 }
                             }
+                        }
+
+                        @Override
+                        public void onDeleted() {
+                            loadingDialog.dismiss();
+                            if (listener[0] != null) listener[0].remove();
+                        }
+
+                        @Override
+                        public void onError(Exception exception) {
+                            loadingDialog.dismiss();
+                            Toast.makeText(context, "Error listening for confirmation", Toast.LENGTH_SHORT).show();
                         }
                     });
 
@@ -609,12 +621,15 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                         handler.removeCallbacks(timeoutRunnable);
                         if (listener[0] != null) listener[0].remove();
                     });
-                })
-                .addOnFailureListener(e -> {
+                }
+
+                @Override
+                public void onError(Exception exception) {
                     loadingDialog.dismiss();
-                    Toast.makeText(context, "Failed to notify station: " + e.getMessage(),
+                    Toast.makeText(context, "Failed to notify station: " + exception.getMessage(),
                             Toast.LENGTH_SHORT).show();
-                });
+                }
+        });
     }
 
     private void showConfirmationDialog(String message) {
@@ -669,12 +684,12 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
             Bundle extras = data.getExtras();
             Bitmap imageBitmap = (Bitmap) extras.get("data");
             if (imageBitmap != null && currentEmergencyDocId != null) {
-                uploadImageToFirebase(imageBitmap, currentEmergencyDocId);
+                uploadEmergencyImage(imageBitmap, currentEmergencyDocId);
             }
         }
     }
 
-    private void uploadImageToFirebase(Bitmap bitmap, String emergencyDocId) {
+    private void uploadEmergencyImage(Bitmap bitmap, String emergencyDocId) {
         AlertDialog uploadDialog = new AlertDialog.Builder(context)
                 .setMessage("Processing image...")
                 .setCancelable(false)
@@ -699,30 +714,27 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
                 String base64Image = Base64.encodeToString(imageData, Base64.DEFAULT);
 
-                // ✅ FIXED: Keep Firestore call on background thread
-                Map<String, Object> updateData = new HashMap<>();
-                updateData.put("imageBase64",    base64Image);
-                updateData.put("hasImage",        true);
-                updateData.put("imageTimestamp",  System.currentTimeMillis());
-                updateData.put("imageSize",       imageData.length);
-
-                db.collection("emergency_locations").document(emergencyDocId)
-                        .update(updateData)
-                        .addOnSuccessListener(aVoid -> {
+                emergencyRepository.updateEmergencyImage(emergencyDocId, base64Image, imageData.length,
+                        new EmergencyRepository.Callback<Void>() {
+                        @Override
+                        public void onSuccess(Void value) {
                             ((Activity) context).runOnUiThread(() -> {
                                 uploadDialog.dismiss();
                                 Toast.makeText(context,
                                         "Image saved! This will help rescuers locate you better.",
                                         Toast.LENGTH_LONG).show();
                             });
-                        })
-                        .addOnFailureListener(e -> {
+                        }
+
+                        @Override
+                        public void onError(Exception exception) {
                             ((Activity) context).runOnUiThread(() -> {
                                 uploadDialog.dismiss();
-                                Toast.makeText(context, "Failed to save image: " + e.getMessage(),
+                                Toast.makeText(context, "Failed to save image: " + exception.getMessage(),
                                         Toast.LENGTH_SHORT).show();
                             });
-                        });
+                        }
+                });
             } catch (Exception e) {
                 ((Activity) context).runOnUiThread(() -> {
                     uploadDialog.dismiss();

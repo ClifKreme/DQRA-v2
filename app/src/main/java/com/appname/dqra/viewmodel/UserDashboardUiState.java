@@ -1,4 +1,4 @@
-package com.appname.dqra.user;
+package com.appname.dqra.viewmodel;
 
 import com.appname.dqra.model.RescueStation;
 

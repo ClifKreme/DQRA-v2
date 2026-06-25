@@ -1,6 +1,6 @@
 package com.appname.dqra.listeners;
 
-// Import necessary Android and Firebase libraries
+// Import necessary Android libraries
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -30,12 +30,8 @@ import androidx.core.app.NotificationCompat;
 
 import com.appname.dqra.R;
 import com.appname.dqra.maindashboards.AdminDashboard;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.ListenerRegistration;
-import com.google.firebase.firestore.Query;
-import com.google.firebase.firestore.QueryDocumentSnapshot;
+import com.appname.dqra.repository.AccountRepository;
+import com.appname.dqra.repository.EmergencyRepository;
 
 /**
  * Service that monitors Firestore for emergency updates and sends notifications
@@ -52,7 +48,9 @@ public class FirestoreService extends Service {
 
     // Member variables for service operation
     private PowerManager.WakeLock wakeLock; // Keeps CPU running to handle background processing
-    private ListenerRegistration emergencyListener; // Registration object for Firestore listener
+    private EmergencyRepository.ListenerHandle emergencyListener; // Registration object for emergency listener
+    private AccountRepository accountRepository;
+    private EmergencyRepository emergencyRepository;
     private SharedPreferences sharedPreferences; // For persisting the last emergency timestamp
     private long lastProcessedTimestamp = 0; // Tracks the most recent emergency timestamp processed
     private long lastAppLaunchTime = 0; // Tracks when the app was last launched to prevent spam
@@ -69,6 +67,8 @@ public class FirestoreService extends Service {
         // Get stored preferences and retrieve the last processed emergency timestamp
         sharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         lastProcessedTimestamp = sharedPreferences.getLong(KEY_LAST_TIMESTAMP, 0);
+        accountRepository = new AccountRepository();
+        emergencyRepository = new EmergencyRepository();
     }
 
     /**
@@ -180,72 +180,53 @@ public class FirestoreService extends Service {
      * Set up listeners for emergency updates in Firestore based on user role
      */
     private void listenForFirestoreUpdates() {
-        FirebaseFirestore db = FirebaseFirestore.getInstance();
-        String currentUserId = getCurrentUserId();
-
-        if (currentUserId == null) {
+        if (!accountRepository.hasCurrentUser()) {
             stopSelf();
             return;
         }
 
-        // Check if user is an admin
-        checkAdminStatus(db, currentUserId);
-    }
+        emergencyRepository.fetchCurrentAdminMunicipality(new EmergencyRepository.Callback<String>() {
+            @Override
+            public void onSuccess(String municipality) {
+                setupEmergencyListener(municipality, AdminDashboard.class);
+            }
 
-    private void checkAdminStatus(FirebaseFirestore db, String userId) {
-        db.collection("admins_with_stations").document(userId).get()
-                .addOnSuccessListener(adminDoc -> {
-                    if (adminDoc.exists()) {
-                        // If user is an admin, get their municipality and set up listener
-                        String municipality = adminDoc.getString("municipality");
-                        if (municipality != null) {
-                            setupEmergencyListener(db, municipality, AdminDashboard.class);
-                        } else {
-                            // Stop service if admin has no municipality assigned
-                            stopSelf();
-                        }
-                    } else {
-                        // Stop service if user is not an admin
-                        stopSelf();
-                    }
-                })
-                .addOnFailureListener(e -> stopSelf());
+            @Override
+            public void onError(Exception exception) {
+                stopSelf();
+            }
+        });
     }
 
     /**
      * Configure the emergency listener for the user's municipality
      */
-    private void setupEmergencyListener(FirebaseFirestore db, String municipality, Class<?> targetActivity) {
+    private void setupEmergencyListener(String municipality, Class<?> targetActivity) {
         // Clean up any existing listener first
         removeFirestoreListener();
 
         // Set up real-time listener for the most recent emergency
-        emergencyListener = db.collection("emergency_locations")
-                .orderBy("timestamp", Query.Direction.DESCENDING) // Sort by newest first
-                .limit(1) // Get only the most recent emergency
-                .addSnapshotListener((snapshots, error) -> {
-                    if (error != null || snapshots == null || snapshots.isEmpty()) {
-                        return;
-                    }
+        emergencyListener = emergencyRepository.listenForLatestEmergency(
+                new EmergencyRepository.LatestEmergencyListener() {
+            @Override
+            public void onEmergency(String emergencyId, String emergencyMunicipality, long timestamp) {
+                processEmergency(emergencyId, emergencyMunicipality, timestamp, municipality, targetActivity);
+            }
 
-                    // Process each emergency document (should only be one due to limit(1))
-                    for (QueryDocumentSnapshot document : snapshots) {
-                        processEmergency(document, municipality, targetActivity);
-                    }
-                });
+            @Override
+            public void onError(Exception exception) {
+                Log.w(TAG, "Emergency listener failed", exception);
+            }
+        });
     }
 
     /**
      * Process a new emergency document and send notification if relevant
      */
-    private void processEmergency(QueryDocumentSnapshot document, String userMunicipality, Class<?> targetActivity) {
-        // Extract emergency details
-        String emergencyMunicipality = document.getString("municipality");
-        Long timestamp = document.getLong("timestamp");
-        String emergencyId = document.getId();
-
+    private void processEmergency(String emergencyId, String emergencyMunicipality, long timestamp,
+                                  String userMunicipality, Class<?> targetActivity) {
         // Ignore emergencies that don't match user's municipality or have missing data
-        if (emergencyMunicipality == null || timestamp == null || !emergencyMunicipality.equals(userMunicipality)) {
+        if (emergencyMunicipality == null || timestamp <= 0 || !emergencyMunicipality.equals(userMunicipality)) {
             return;
         }
 
@@ -454,11 +435,4 @@ public class FirestoreService extends Service {
         }
     }
 
-    /**
-     * Helper method to get the current user's ID from Firebase Authentication
-     */
-    private String getCurrentUserId() {
-        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
-        return user != null ? user.getUid() : null;
-    }
 }

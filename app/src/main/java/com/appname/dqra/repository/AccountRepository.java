@@ -1,8 +1,11 @@
 package com.appname.dqra.repository;
 
+import com.appname.dqra.cache.AppCache;
 import com.appname.dqra.model.StartDestination;
 import com.appname.dqra.model.UserProfile;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 
@@ -42,6 +45,84 @@ public class AccountRepository {
 
     public void signOut() {
         auth.signOut();
+    }
+
+    public String getCurrentUserEmail() {
+        return auth.getCurrentUser() == null ? null : auth.getCurrentUser().getEmail();
+    }
+
+    public void loginWithEmail(String email, String password, Callback<Void> callback) {
+        auth.signInWithEmailAndPassword(email, password)
+                .addOnSuccessListener(authResult -> callback.onSuccess(null))
+                .addOnFailureListener(callback::onError);
+    }
+
+    public void loginWithGoogleToken(String idToken, Callback<Boolean> callback) {
+        auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
+                .addOnSuccessListener(authResult -> {
+                    FirebaseUser user = auth.getCurrentUser();
+                    if (user == null) {
+                        callback.onError(new IllegalStateException("Authentication failed"));
+                        return;
+                    }
+
+                    firestore.collection(USERS_COLLECTION).document(user.getUid()).get()
+                            .addOnSuccessListener(document -> callback.onSuccess(!document.exists()))
+                            .addOnFailureListener(callback::onError);
+                })
+                .addOnFailureListener(callback::onError);
+    }
+
+    public void createGoogleUser(Callback<Void> callback) {
+        FirebaseUser user = auth.getCurrentUser();
+        if (user == null) {
+            callback.onError(new IllegalStateException("User is not signed in"));
+            return;
+        }
+
+        Map<String, Object> userMap = new HashMap<>();
+        userMap.put("role", "User");
+        userMap.put("email", user.getEmail());
+        userMap.put("termsAccepted", true);
+        userMap.put("createdAt", System.currentTimeMillis());
+
+        firestore.collection(USERS_COLLECTION).document(user.getUid()).set(userMap)
+                .addOnSuccessListener(unused -> callback.onSuccess(null))
+                .addOnFailureListener(callback::onError);
+    }
+
+    public void resolveLoginRole(Callback<StartDestination> callback) {
+        String userId = getCurrentUserId();
+        if (userId == null) {
+            callback.onError(new IllegalStateException("User is not signed in"));
+            return;
+        }
+
+        firestore.collection(MAIN_COLLECTION).document(userId).get()
+                .addOnSuccessListener(mainDoc -> {
+                    if (mainDoc.exists() && "main".equalsIgnoreCase(mainDoc.getString("role"))) {
+                        callback.onSuccess(StartDestination.MAIN_ADMIN);
+                    } else {
+                        firestore.collection(USERS_COLLECTION).document(userId).get()
+                                .addOnSuccessListener(userDoc -> {
+                                    if (userDoc.exists()) {
+                                        callback.onSuccess(StartDestination.USER_DASHBOARD);
+                                    } else {
+                                        firestore.collection(ADMINS_COLLECTION).document(userId).get()
+                                                .addOnSuccessListener(adminDoc -> {
+                                                    if (adminDoc.exists()) {
+                                                        callback.onSuccess(StartDestination.ADMIN_DASHBOARD);
+                                                    } else {
+                                                        callback.onError(new IllegalStateException("User account not found"));
+                                                    }
+                                                })
+                                                .addOnFailureListener(callback::onError);
+                                    }
+                                })
+                                .addOnFailureListener(callback::onError);
+                    }
+                })
+                .addOnFailureListener(callback::onError);
     }
 
     public void registerUser(String name, String email, String password, String phone, String address,
@@ -126,15 +207,29 @@ public class AccountRepository {
             return;
         }
 
+        UserProfile cachedProfile = AppCache.getInstance().getUserProfile(userId);
+        boolean hasCache = cachedProfile != null;
+        if (hasCache) {
+            callback.onSuccess(cachedProfile);
+        }
+
         firestore.collection(USERS_COLLECTION).document(userId).get()
                 .addOnSuccessListener(documentSnapshot -> {
                     if (!documentSnapshot.exists()) {
-                        callback.onError(new IllegalStateException("User data not found"));
+                        if (!hasCache) {
+                            callback.onError(new IllegalStateException("User data not found"));
+                        }
                         return;
                     }
-                    callback.onSuccess(profileFromDocument(documentSnapshot));
+                    UserProfile profile = profileFromDocument(documentSnapshot);
+                    AppCache.getInstance().putUserProfile(userId, profile);
+                    callback.onSuccess(profile);
                 })
-                .addOnFailureListener(callback::onError);
+                .addOnFailureListener(exception -> {
+                    if (!hasCache) {
+                        callback.onError(exception);
+                    }
+                });
     }
 
     public void updateCurrentUserProfile(String fullName, String phone, String address,
@@ -152,7 +247,15 @@ public class AccountRepository {
 
         firestore.collection(USERS_COLLECTION).document(userId)
                 .update(updates)
-                .addOnSuccessListener(unused -> callback.onSuccess(null))
+                .addOnSuccessListener(unused -> {
+                    UserProfile cachedProfile = AppCache.getInstance().getUserProfile(userId);
+                    String email = cachedProfile == null ? null : cachedProfile.getEmail();
+                    String role = cachedProfile == null ? null : cachedProfile.getRole();
+                    String profileImage = cachedProfile == null ? null : cachedProfile.getProfileImageBase64();
+                    AppCache.getInstance().putUserProfile(userId,
+                            new UserProfile(userId, fullName, email, phone, address, role, profileImage));
+                    callback.onSuccess(null);
+                })
                 .addOnFailureListener(callback::onError);
     }
 
@@ -168,7 +271,21 @@ public class AccountRepository {
 
         firestore.collection(USERS_COLLECTION).document(userId)
                 .update(updates)
-                .addOnSuccessListener(unused -> callback.onSuccess(null))
+                .addOnSuccessListener(unused -> {
+                    UserProfile cachedProfile = AppCache.getInstance().getUserProfile(userId);
+                    if (cachedProfile != null) {
+                        AppCache.getInstance().putUserProfile(userId,
+                                new UserProfile(
+                                        cachedProfile.getId(),
+                                        cachedProfile.getFullName(),
+                                        cachedProfile.getEmail(),
+                                        cachedProfile.getPhone(),
+                                        cachedProfile.getAddress(),
+                                        cachedProfile.getRole(),
+                                        profileImageBase64));
+                    }
+                    callback.onSuccess(null);
+                })
                 .addOnFailureListener(callback::onError);
     }
 
@@ -189,7 +306,15 @@ public class AccountRepository {
 
         firestore.collection(USERS_COLLECTION).document(userId)
                 .update(updates)
-                .addOnSuccessListener(unused -> callback.onSuccess(null))
+                .addOnSuccessListener(unused -> {
+                    UserProfile cachedProfile = AppCache.getInstance().getUserProfile(userId);
+                    String email = cachedProfile == null ? null : cachedProfile.getEmail();
+                    String role = cachedProfile == null ? null : cachedProfile.getRole();
+                    String profileImage = cachedProfile == null ? null : cachedProfile.getProfileImageBase64();
+                    AppCache.getInstance().putUserProfile(userId,
+                            new UserProfile(userId, fullName, email, phone, address, role, profileImage));
+                    callback.onSuccess(null);
+                })
                 .addOnFailureListener(callback::onError);
     }
 

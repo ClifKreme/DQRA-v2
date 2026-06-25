@@ -1,4 +1,4 @@
-package com.appname.dqra.admin;
+package com.appname.dqra.viewmodel;
 
 import android.location.Location;
 
@@ -187,6 +187,23 @@ public class AdminDashboardViewModel extends ViewModel {
                         actionError.setValue(exception.getMessage());
                     }
                 });
+    }
+
+    public void fetchEmergencyImageData(String emergencyId,
+                                        AdminDashboardRepository.ValueCallback<AdminEmergency> callback) {
+        repository.fetchEmergencyImageData(emergencyId, callback);
+    }
+
+    public ListenerRegistration listenForEmergencyImageData(
+            String emergencyId,
+            AdminDashboardRepository.ValueCallback<AdminEmergency> callback) {
+        return repository.listenForEmergencyImageData(emergencyId, callback);
+    }
+
+    public ListenerRegistration listenForWebsiteNotifications(
+            String municipality,
+            AdminDashboardRepository.WebsiteNotificationListener listener) {
+        return repository.listenForWebsiteNotifications(municipality, listener);
     }
 
     @Override

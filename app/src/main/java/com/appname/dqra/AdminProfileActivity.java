@@ -26,23 +26,16 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
 
 import com.appname.dqra.maindashboards.AdminDashboard;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.FirebaseFirestore;
+import com.appname.dqra.model.AdminProfile;
+import com.appname.dqra.repository.AdminProfileRepository;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.util.HashMap;
-import java.util.Map;
-
 public class AdminProfileActivity extends BaseActivity {
 
     private static final int PROFILE_IMAGE_MAX_SIZE = 512;
     private static final int PROFILE_IMAGE_QUALITY = 70;
-    private static final String ADMINS_COLLECTION = "admins_with_stations";
-
-    private FirebaseAuth auth;
-    private FirebaseFirestore firestore;
+    private AdminProfileRepository adminProfileRepository;
 
     // Header views
     private ImageView ivAdminProfileAvatar;
@@ -67,8 +60,7 @@ public class AdminProfileActivity extends BaseActivity {
         setContentLayout(R.layout.activity_admin_profile);
         setActiveTab(Tab.PROFILE);
 
-        auth = FirebaseAuth.getInstance();
-        firestore = FirebaseFirestore.getInstance();
+        adminProfileRepository = new AdminProfileRepository();
 
         setupImagePicker();
         initializeViews();
@@ -242,64 +234,55 @@ public class AdminProfileActivity extends BaseActivity {
             return;
         }
 
-        String userId = auth.getCurrentUser() == null ? null : auth.getCurrentUser().getUid();
-        if (userId == null) {
-            goToLogin();
-            return;
-        }
-
         btnAdminSave.setEnabled(false);
+        adminProfileRepository.updateCurrentAdminProfile(stationName, municipality, stationPhone,
+                new AdminProfileRepository.Callback<Void>() {
+                    @Override
+                    public void onSuccess(Void value) {
+                        tvAdminStationName.setText(stationName);
+                        tvAdminMunicipality.setText(municipality);
+                        tvAdminStationPhone.setText(stationPhone.isEmpty() ? "N/A" : stationPhone);
+                        tvAdminProfileTitle.setText(stationName);
+                        tvAdminProfileSubtitle.setText(municipality);
 
-        Map<String, Object> updates = new HashMap<>();
-        updates.put("stationName", stationName);
-        updates.put("municipality", municipality);
-        updates.put("stationPhone", stationPhone);
+                        btnAdminSave.setEnabled(true);
+                        exitEditMode();
+                        Toast.makeText(AdminProfileActivity.this,
+                                "Profile updated", Toast.LENGTH_SHORT).show();
+                    }
 
-        firestore.collection(ADMINS_COLLECTION).document(userId)
-                .update(updates)
-                .addOnSuccessListener(unused -> {
-                    // Update display TextViews
-                    tvAdminStationName.setText(stationName);
-                    tvAdminMunicipality.setText(municipality);
-                    tvAdminStationPhone.setText(stationPhone.isEmpty() ? "N/A" : stationPhone);
-                    tvAdminProfileTitle.setText(stationName);
-                    tvAdminProfileSubtitle.setText(municipality);
-
-                    btnAdminSave.setEnabled(true);
-                    exitEditMode();
-                    Toast.makeText(this, "Profile updated", Toast.LENGTH_SHORT).show();
-                })
-                .addOnFailureListener(exception -> {
-                    btnAdminSave.setEnabled(true);
-                    Toast.makeText(this, "Update failed", Toast.LENGTH_SHORT).show();
+                    @Override
+                    public void onError(Exception exception) {
+                        btnAdminSave.setEnabled(true);
+                        Toast.makeText(AdminProfileActivity.this,
+                                "Update failed", Toast.LENGTH_SHORT).show();
+                    }
                 });
     }
 
     // ─── Load profile ────────────────────────────────────────────────────────
 
     private void loadAdminProfile() {
-        String userId = auth.getCurrentUser() == null ? null : auth.getCurrentUser().getUid();
-        if (userId == null) {
-            goToLogin();
-            return;
-        }
+        adminProfileRepository.loadCurrentAdminProfile(new AdminProfileRepository.Callback<AdminProfile>() {
+            @Override
+            public void onSuccess(AdminProfile profile) {
+                renderAdminProfile(profile);
+            }
 
-        firestore.collection(ADMINS_COLLECTION).document(userId).get()
-                .addOnSuccessListener(this::renderAdminProfile)
-                .addOnFailureListener(exception ->
-                        Toast.makeText(this, "Failed to load admin profile", Toast.LENGTH_SHORT).show());
+            @Override
+            public void onError(Exception exception) {
+                Toast.makeText(AdminProfileActivity.this,
+                        "Failed to load admin profile", Toast.LENGTH_SHORT).show();
+                goToLogin();
+            }
+        });
     }
 
-    private void renderAdminProfile(DocumentSnapshot document) {
-        if (!document.exists()) {
-            Toast.makeText(this, "Admin profile not found", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String stationName  = valueOrFallback(document.getString("stationName"));
-        String municipality = valueOrFallback(document.getString("municipality"));
-        String stationPhone = valueOrFallback(document.getString("stationPhone"));
-        String email        = valueOrFallback(document.getString("email"));
+    private void renderAdminProfile(AdminProfile profile) {
+        String stationName  = valueOrFallback(profile.getStationName());
+        String municipality = valueOrFallback(profile.getMunicipality());
+        String stationPhone = valueOrFallback(profile.getStationPhone());
+        String email        = valueOrFallback(profile.getEmail());
 
         tvAdminProfileTitle.setText(stationName);
         tvAdminProfileSubtitle.setText(municipality);
@@ -308,7 +291,7 @@ public class AdminProfileActivity extends BaseActivity {
         tvAdminStationPhone.setText(stationPhone);
         tvAdminEmail.setText(email);
 
-        currentProfileImageBase64 = document.getString("profileImageBase64");
+        currentProfileImageBase64 = profile.getProfileImageBase64();
         renderProfileImage(currentProfileImageBase64);
     }
 
@@ -321,23 +304,22 @@ public class AdminProfileActivity extends BaseActivity {
     private void saveSelectedProfileImage(Uri uri) {
         try {
             String encodedImage = encodeProfileImage(uri);
-            String userId = auth.getCurrentUser() == null ? null : auth.getCurrentUser().getUid();
-            if (userId == null) {
-                goToLogin();
-                return;
-            }
-
-            Map<String, Object> updates = new HashMap<>();
-            updates.put("profileImageBase64", encodedImage);
-            firestore.collection(ADMINS_COLLECTION).document(userId)
-                    .update(updates)
-                    .addOnSuccessListener(unused -> {
+            adminProfileRepository.updateCurrentAdminProfileImage(encodedImage,
+                    new AdminProfileRepository.Callback<Void>() {
+                        @Override
+                        public void onSuccess(Void value) {
                         currentProfileImageBase64 = encodedImage;
                         renderProfileImage(encodedImage);
-                        Toast.makeText(this, "Profile photo updated", Toast.LENGTH_SHORT).show();
-                    })
-                    .addOnFailureListener(exception ->
-                            Toast.makeText(this, "Photo update failed", Toast.LENGTH_SHORT).show());
+                            Toast.makeText(AdminProfileActivity.this,
+                                    "Profile photo updated", Toast.LENGTH_SHORT).show();
+                        }
+
+                        @Override
+                        public void onError(Exception exception) {
+                            Toast.makeText(AdminProfileActivity.this,
+                                    "Photo update failed", Toast.LENGTH_SHORT).show();
+                        }
+                    });
         } catch (Exception exception) {
             Toast.makeText(this, "Failed to read selected image", Toast.LENGTH_SHORT).show();
         }
@@ -428,7 +410,7 @@ public class AdminProfileActivity extends BaseActivity {
     // ─── Auth ────────────────────────────────────────────────────────────────
 
     private void logout() {
-        auth.signOut();
+        adminProfileRepository.signOut();
         goToLogin();
     }
 

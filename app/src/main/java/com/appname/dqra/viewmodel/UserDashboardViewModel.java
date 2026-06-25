@@ -1,4 +1,4 @@
-package com.appname.dqra.user;
+package com.appname.dqra.viewmodel;
 
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;

@@ -1,4 +1,4 @@
-package com.appname.dqra.admin;
+package com.appname.dqra.viewmodel;
 
 public class AdminEmergencyStreamState {
 

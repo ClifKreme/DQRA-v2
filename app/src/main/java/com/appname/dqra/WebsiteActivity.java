@@ -6,23 +6,17 @@ import android.os.Bundle;
 import android.widget.Button;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AppCompatActivity;
-
-import com.google.firebase.firestore.FieldValue;
-import com.google.firebase.firestore.FirebaseFirestore;
-
-import java.util.HashMap;
-import java.util.Map;
+import com.appname.dqra.repository.WebsiteRepository;
 
 public class WebsiteActivity extends BaseActivity {
-    private FirebaseFirestore db;
+    private WebsiteRepository websiteRepository;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentLayout(R.layout.activity_web);
 
-        db = FirebaseFirestore.getInstance();
+        websiteRepository = new WebsiteRepository();
         Button btnOpenWebsite = findViewById(R.id.btnOpenWebsite);
 
         // Replace with your website link
@@ -45,20 +39,20 @@ public class WebsiteActivity extends BaseActivity {
         // Try to get from user preferences or make it configurable
         // For now, keeping default but making it clear it should be dynamic
         
-        // Create a notification document in Firestore
-        Map<String, Object> notificationData = new HashMap<>();
-        notificationData.put("type", "website_access");
-        notificationData.put("timestamp", FieldValue.serverTimestamp());
-        notificationData.put("municipality", targetMunicipality); // Now using variable
-        notificationData.put("status", "unread");
+        websiteRepository.sendWebsiteAccessNotification(targetMunicipality,
+                new WebsiteRepository.Callback<Void>() {
+                    @Override
+                    public void onSuccess(Void value) {
+                        Toast.makeText(WebsiteActivity.this,
+                                "Notification sent to " + targetMunicipality + " station",
+                                Toast.LENGTH_SHORT).show();
+                    }
 
-        db.collection("website_notifications")
-                .add(notificationData)
-                .addOnSuccessListener(documentReference -> {
-                    Toast.makeText(this, "Notification sent to " + targetMunicipality + " station", Toast.LENGTH_SHORT).show();
-                })
-                .addOnFailureListener(e -> {
-                    Toast.makeText(this, "Failed to send notification", Toast.LENGTH_SHORT).show();
+                    @Override
+                    public void onError(Exception exception) {
+                        Toast.makeText(WebsiteActivity.this,
+                                "Failed to send notification", Toast.LENGTH_SHORT).show();
+                    }
                 });
     }
 }

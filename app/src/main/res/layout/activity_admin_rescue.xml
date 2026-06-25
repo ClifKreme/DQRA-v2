@@ -10,7 +10,9 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:paddingBottom="88dp"
+        android:clipToPadding="false">
 
         <!-- ══════════════════════════════════════════════ -->
         <!--  TOP BAR  — compact                           -->
@@ -297,20 +299,24 @@
                     android:gravity="center_vertical">
 
                     <ImageView
-                        android:layout_width="14dp"
-                        android:layout_height="14dp"
-                        android:src="@drawable/ic_person"
-                        android:tint="@color/dash_text_secondary"
-                        android:layout_marginEnd="6dp"/>
+                        android:id="@+id/ivSenderProfile"
+                        android:layout_width="42dp"
+                        android:layout_height="42dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/avatar_ring"
+                        android:padding="4dp"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/ic_profile_placeholder"/>
 
                     <TextView
                         android:id="@+id/tvSenderName"
-                        android:layout_width="match_parent"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_weight="1"
                         android:text=""
                         android:textColor="@color/dash_text_secondary"
                         android:textSize="12sp"
-                        android:visibility="gone"/>
+                        android:lineSpacingMultiplier="1.2"/>
                 </LinearLayout>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
@@ -516,31 +522,17 @@
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:paddingTop="10dp"
-            android:paddingBottom="24dp">
-
-            <Button
-                android:id="@+id/btnLogs"
-                android:layout_width="0dp"
-                android:layout_height="42dp"
-                android:layout_weight="1"
-                android:text="📋  View Logs"
-                android:textAllCaps="false"
-                android:textSize="13sp"
-                android:textColor="@color/white"
-                android:backgroundTint="#546E7A"
-                android:layout_marginEnd="6dp"/>
+            android:paddingBottom="8dp">
 
             <Button
                 android:id="@+id/btnLogout"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="42dp"
-                android:layout_weight="1"
                 android:text="Logout"
                 android:textAllCaps="false"
                 android:textSize="13sp"
                 android:textColor="@color/white"
-                android:backgroundTint="@color/btn_logout"
-                android:layout_marginStart="6dp"/>
+                android:backgroundTint="@color/btn_logout"/>
         </LinearLayout>
 
     </LinearLayout>
