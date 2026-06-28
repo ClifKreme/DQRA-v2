@@ -3,7 +3,6 @@ package com.appname.dqra;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -18,29 +17,14 @@ import androidx.core.content.ContextCompat;
 public class MainActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 101;
     private static final int BACKGROUND_LOCATION_REQUEST_CODE = 102;
-    private static final String PREFS_NAME = "AppPrefs";
-    private static final String FIRST_LAUNCH_KEY = "isFirstLaunch";
     private boolean waitingForNotificationSettings = false;
     private boolean notificationDialogShowing = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // Check if it's the first launch
-        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        boolean isFirstLaunch = prefs.getBoolean(FIRST_LAUNCH_KEY, true);
-
-        if (isFirstLaunch) {
-            // Mark that the app has been launched before
-            prefs.edit().putBoolean(FIRST_LAUNCH_KEY, false).apply();
-
-            // Redirect to RegisterActivity (first-time only)
-            redirectToRegister();
-        } else {
-            // Normal flow: request permissions then go to LoginActivity
-            requestPermissions();
-        }
+        // Always go through the permissions flow, then to LoginActivity
+        requestPermissions();
     }
 
     @Override
@@ -178,11 +162,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void redirectToLogin() {
         startActivity(new Intent(this, LoginActivity.class));
-        finish();
-    }
-
-    private void redirectToRegister() {
-        startActivity(new Intent(this, RegisterActivity.class));
         finish();
     }
 }

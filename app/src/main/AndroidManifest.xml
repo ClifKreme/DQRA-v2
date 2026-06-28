@@ -40,7 +40,8 @@
 
     <application
         android:name=".DqraApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/dqralogo"
@@ -91,7 +92,8 @@
             android:windowSoftInputMode="adjustResize"
             android:exported="false" />
 
-        <activity android:name="com.appname.dqra.ProfileCheckActivity" />
+        <activity android:name="com.appname.dqra.ProfileCheckActivity"
+            android:exported="false" />
         <service
             android:name="com.appname.dqra.listeners.FirestoreService"
             android:foregroundServiceType="location"
@@ -115,7 +117,8 @@
         <activity
             android:name="com.appname.dqra.AdminProfileActivity"
             android:exported="false" />
-        <activity android:name="com.appname.dqra.WebsiteActivity" />
+        <activity android:name="com.appname.dqra.WebsiteActivity"
+            android:exported="false" />
         <activity android:name="com.appname.dqra.HelpSupportActivity"
             android:exported="false" />
         <activity android:name="com.appname.dqra.AppFeedbackActivity"
@@ -142,9 +145,6 @@
             android:turnScreenOn="true" />
         <!-- Admin Dashboard Activity (Check if missing) -->
 
-        <activity
-            android:name="com.appname.dqra.RegisterActivity"
-            android:exported="false" />
 
         <activity
             android:name="com.appname.dqra.maindashboards.UserDashboard"

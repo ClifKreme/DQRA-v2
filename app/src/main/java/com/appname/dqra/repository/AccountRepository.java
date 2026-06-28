@@ -125,33 +125,6 @@ public class AccountRepository {
                 .addOnFailureListener(callback::onError);
     }
 
-    public void registerUser(String name, String email, String password, String phone, String address,
-                             Callback<Void> callback) {
-        auth.createUserWithEmailAndPassword(email, password)
-                .addOnSuccessListener(authResult -> {
-                    String userId = getCurrentUserId();
-                    if (userId == null) {
-                        callback.onError(new IllegalStateException("User account was not created correctly"));
-                        return;
-                    }
-
-                    Map<String, Object> user = new HashMap<>();
-                    user.put("id", userId);
-                    user.put("fullName", name);
-                    user.put("email", email);
-                    user.put("phone", phone);
-                    user.put("address", address);
-                    user.put("role", "User");
-
-                    firestore.collection(USERS_COLLECTION)
-                            .document(userId)
-                            .set(user)
-                            .addOnSuccessListener(unused -> callback.onSuccess(null))
-                            .addOnFailureListener(callback::onError);
-                })
-                .addOnFailureListener(callback::onError);
-    }
-
     public void resolveStartDestination(Callback<StartDestination> callback) {
         String userId = getCurrentUserId();
         if (userId == null) {

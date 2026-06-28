@@ -83,6 +83,10 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
     private int consecutiveCancels = 0;
     private boolean emergencyInFlight = false;
 
+    // Guards against multiple dialogs/toasts when buttons are tapped while network is slow
+    private boolean emergencyDialogShowing = false;
+    private boolean messengerInFlight = false;
+
     public UserAdapter(Context context, List<RescueStation> rescueStationList) {
         this.context = context;
         this.rescueStationList = rescueStationList;
@@ -171,6 +175,8 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
         // ── Messenger button ───────────────────────────────────────────────────
         holder.btnMessenger.setOnClickListener(v -> {
+            if (messengerInFlight) return;
+            messengerInFlight = true;
             if (!isNetworkAvailable()) {
                 showEnableNetworkDialog(station);
             } else {
@@ -183,14 +189,24 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
             holder.btnAction.setText("🚨 SEND EMERGENCY ALERT");
             holder.btnAction.setBackgroundTintList(
                     android.content.res.ColorStateList.valueOf(0xFFD32F2F));
-            holder.btnAction.setOnClickListener(v ->
-                    checkLocationPermissions(station.getId(), station.getMunicipality()));
+            holder.progressAction.setVisibility(View.GONE);
+            holder.btnAction.setEnabled(true);
+            holder.btnAction.setOnClickListener(v -> {
+                // Show spinner on the button, hide text, disable to prevent double-tap
+                holder.btnAction.setText("");
+                holder.btnAction.setEnabled(false);
+                holder.progressAction.setVisibility(View.VISIBLE);
+                checkLocationPermissions(station.getId(), station.getMunicipality(),
+                        holder.btnAction, holder.progressAction);
+            });
         } else {
             holder.btnAction.setText("📞 CALL RESCUE STATION");
             holder.btnAction.setBackgroundTintList(
                     android.content.res.ColorStateList.valueOf(0xFF2E7D32));
+            holder.progressAction.setVisibility(View.GONE);
+            holder.btnAction.setEnabled(true);
             holder.btnAction.setOnClickListener(v ->
-                    showCallOptionsDialog(station));  // ← shows both numbers if available
+                    showCallOptionsDialog(station));
         }
     }
 
@@ -208,6 +224,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
         public ImageView imgStationProfile;
         public Button   btnAction;
         public Button   btnMessenger;
+        public android.widget.ProgressBar progressAction;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
@@ -217,6 +234,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
             tvPhoneNumber  = itemView.findViewById(R.id.stationPhone);
             btnAction      = itemView.findViewById(R.id.btnAction);
             btnMessenger   = itemView.findViewById(R.id.btnMessenger);
+            progressAction = itemView.findViewById(R.id.progressAction);
         }
     }
 
@@ -338,6 +356,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                         "internet connection.\n\nPlease enable Mobile Data or WiFi to continue.\n\n" +
                         "Would you like to open network settings?")
                 .setPositiveButton("Open Settings", (dialog, which) -> {
+                    messengerInFlight = false;
                     try {
                         context.startActivity(new Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS));
                         Toast.makeText(context,
@@ -353,15 +372,18 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                         }
                     }
                 })
-                .setNegativeButton("Cancel", (dialog, which) ->
-                        Toast.makeText(context, "Location sharing requires internet connection",
-                                Toast.LENGTH_SHORT).show())
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    messengerInFlight = false;
+                    Toast.makeText(context, "Location sharing requires internet connection",
+                            Toast.LENGTH_SHORT).show();
+                })
                 .setNeutralButton("Try Anyway", (dialog, which) -> {
                     Toast.makeText(context,
                             "⚠️ No internet detected. Please enable Mobile Data before sending.",
                             Toast.LENGTH_LONG).show();
                     getLocationAndShareMessage(station);
                 })
+                .setOnCancelListener(dialog -> messengerInFlight = false)
                 .setIcon(android.R.drawable.ic_dialog_alert)
                 .setCancelable(false)
                 .show();
@@ -406,9 +428,14 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
             return;
         }
 
+        // Use a flag so the callback only fires once.
+        // loadCurrentUserProfile calls onSuccess twice when cache + Firestore both respond.
+        final boolean[] shown = {false};
         accountRepository.loadCurrentUserProfile(new AccountRepository.Callback<UserProfile>() {
             @Override
             public void onSuccess(UserProfile profile) {
+                if (shown[0]) return;
+                shown[0] = true;
                 showShareSheet(createLocationMessage(profile.getFullName(), profile.getPhone(),
                                 stationName, lat, lon),
                         stationName, stationLocation);
@@ -416,6 +443,8 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
             @Override
             public void onError(Exception exception) {
+                if (shown[0]) return;
+                shown[0] = true;
                 showShareSheet(createLocationMessage(null, null, stationName, lat, lon),
                         stationName, stationLocation);
             }
@@ -430,6 +459,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                     android.content.ClipData.newPlainText("Emergency Message", message));
             showMessengerInstructions(stationName, stationLocation, message);
         } catch (Exception e) {
+            messengerInFlight = false;
             Toast.makeText(context, "Error preparing message: " + e.getMessage(),
                     Toast.LENGTH_SHORT).show();
         }
@@ -465,14 +495,18 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                 .setTitle("📱 Send Emergency Message")
                 .setMessage(spannable)
                 .setPositiveButton("Continue", (dialog, which) -> {
+                    messengerInFlight = false;
                     Intent shareIntent = new Intent(Intent.ACTION_SEND);
                     shareIntent.setType("text/plain");
                     shareIntent.putExtra(Intent.EXTRA_TEXT, message);
                     shareIntent.putExtra(Intent.EXTRA_SUBJECT, "🚨 EMERGENCY - " + stationName);
                     context.startActivity(Intent.createChooser(shareIntent, "Select Messenger or messaging app"));
                 })
-                .setNegativeButton("Cancel", (dialog, which) ->
-                        Toast.makeText(context, "Message cancelled", Toast.LENGTH_SHORT).show())
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    messengerInFlight = false;
+                    Toast.makeText(context, "Message cancelled", Toast.LENGTH_SHORT).show();
+                })
+                .setOnCancelListener(dialog -> messengerInFlight = false)
                 .setIcon(android.R.drawable.ic_dialog_info)
                 .show();
     }
@@ -493,73 +527,64 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
     // ─── Emergency alert flow ─────────────────────────────────────────────────
 
-    private void checkLocationPermissions(String adminId, String municipality) {
+    /** Restores the emergency button to its normal state after loading completes. */
+    private void resetActionButton(Button btn, android.widget.ProgressBar progress) {
+        if (btn != null) {
+            btn.setText("🚨 SEND EMERGENCY ALERT");
+            btn.setEnabled(true);
+        }
+        if (progress != null) {
+            progress.setVisibility(View.GONE);
+        }
+    }
+
+    private void checkLocationPermissions(String adminId, String municipality,
+                                          Button actionBtn, android.widget.ProgressBar actionProgress) {
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED &&
                 ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
                         != PackageManager.PERMISSION_GRANTED) {
+            resetActionButton(actionBtn, actionProgress);
             ActivityCompat.requestPermissions((Activity) context,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
                             Manifest.permission.ACCESS_COARSE_LOCATION},
                     LOCATION_PERMISSION_REQUEST_CODE);
         } else {
-            fetchUserLocation(adminId, municipality);
+            fetchAllAndPrepareAlert(adminId, municipality, actionBtn, actionProgress);
         }
     }
 
-    private void fetchUserLocation(String adminId, String municipality) {
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED &&
-                ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
-                        != PackageManager.PERMISSION_GRANTED) return;
-
-        fusedLocationClient.getLastLocation().addOnSuccessListener(location -> {
-            if (location != null) {
-                double lat = location.getLatitude();
-                double lon = location.getLongitude();
-                if (accountRepository.hasCurrentUser()) {
-                    accountRepository.loadCurrentUserProfileFresh(new AccountRepository.Callback<UserProfile>() {
-                        @Override
-                        public void onSuccess(UserProfile profile) {
-                            notifyStationAndRescuers(adminId, municipality, lat, lon,
-                                    profile.getFullName(), profile.getPhone(), profile.getId(),
-                                    profile.getProfileImageBase64());
-                        }
-
-                        @Override
-                        public void onError(Exception exception) {
-                            Toast.makeText(context, "Failed to fetch user data: " + exception.getMessage(),
-                                    Toast.LENGTH_SHORT).show();
-                        }
-                    });
-                }
-            } else {
-                Toast.makeText(context, "Failed to fetch location!", Toast.LENGTH_SHORT).show();
-            }
-        }).addOnFailureListener(e ->
-                Toast.makeText(context, "Error fetching location: " + e.getMessage(),
-                        Toast.LENGTH_SHORT).show());
-    }
-
-    private void notifyStationAndRescuers(String adminId, String municipality,
-                                          double userLat, double userLon,
-                                          String fullName, String phoneNumber, String uid,
-                                          String profileImageBase64) {
+    /**
+     * Fires GPS lookup and profile fetch IN PARALLEL, then runs both cooldown checks
+     * IN PARALLEL once we have the uid. Only then shows the confirmation dialog.
+     * This replaces the old sequential chain of 4 async calls.
+     */
+    private void fetchAllAndPrepareAlert(String adminId, String municipality,
+                                         Button actionBtn, android.widget.ProgressBar actionProgress) {
         if (!accountRepository.hasCurrentUser()) {
+            resetActionButton(actionBtn, actionProgress);
             Toast.makeText(context, "You must be logged in to send a request.", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Guard: block if a request is already being processed right now
         if (emergencyInFlight) {
+            resetActionButton(actionBtn, actionProgress);
             Toast.makeText(context, "Your emergency request is already being sent. Please wait.",
                     Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // Guard: enforce cooldown between submissions
+        // Prevent multiple dialogs/toasts if the button is tapped again while async calls are in progress
+        if (emergencyDialogShowing) {
+            resetActionButton(actionBtn, actionProgress);
+            return;
+        }
+        emergencyDialogShowing = true;
+
         long now = System.currentTimeMillis();
         if (cancelCooldownUntil > now) {
+            resetActionButton(actionBtn, actionProgress);
+            emergencyDialogShowing = false;
             long secondsLeft = (cancelCooldownUntil - now + 999) / 1000;
             new AlertDialog.Builder(context)
                     .setTitle("⏳ Please Wait")
@@ -569,7 +594,6 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                             "If this is a different emergency, please call the station directly.")
                     .setPositiveButton("OK", null)
                     .setNeutralButton("📞 Call Station", (d, w) -> {
-                        // Find the station for this admin and call
                         for (RescueStation s : rescueStationList) {
                             if (adminId.equals(s.getId())) {
                                 showCallOptionsDialog(s);
@@ -577,68 +601,172 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                             }
                         }
                     })
+                    .setOnDismissListener(d -> emergencyDialogShowing = false)
                     .show();
             return;
         }
 
-        emergencyRepository.hasActiveEmergencyForUser(uid, new EmergencyRepository.Callback<Boolean>() {
-            @Override
-            public void onSuccess(Boolean hasActiveEmergency) {
-                if (hasActiveEmergency) {
-                    Toast.makeText(context, "You already have an active emergency request!",
-                            Toast.LENGTH_LONG).show();
-                } else {
-                    checkResolvedEmergencyCooldown(adminId, municipality, userLat, userLon,
-                            fullName, phoneNumber, uid, profileImageBase64);
-                }
+        // ── Parallel phase 1: GPS + cached profile at the same time ──────────
+        final double[] locationResult   = {0, 0};   // [lat, lon]
+        final UserProfile[] profileResult = {null};
+        final boolean[] locationDone    = {false};
+        final boolean[] profileDone     = {false};
+        final boolean[] failed          = {false};
+
+        Handler mainHandler = new Handler(Looper.getMainLooper());
+
+        Runnable onBothReady = () -> {
+            if (!locationDone[0] || !profileDone[0]) return;
+            if (failed[0]) return;
+
+            UserProfile profile = profileResult[0];
+            if (profile == null) {
+                resetActionButton(actionBtn, actionProgress);
+                emergencyDialogShowing = false;
+                Toast.makeText(context, "Failed to load profile. Please try again.", Toast.LENGTH_SHORT).show();
+                return;
             }
 
-            @Override
-            public void onError(Exception exception) {
-                Toast.makeText(context, "Error checking requests: " + exception.getMessage(),
+            double lat          = locationResult[0];
+            double lon          = locationResult[1];
+            String uid          = profile.getId();
+            String fullName     = profile.getFullName();
+            String phone        = profile.getPhone();
+            String profileImage = profile.getProfileImageBase64();
+
+            // ── Parallel phase 2: active-emergency check + resolved cooldown ──
+            final Boolean[] hasActive    = {null};
+            final EmergencyRepository.CooldownState[] cooldown = {null};
+            final boolean[] activeDone   = {false};
+            final boolean[] cooldownDone = {false};
+            final boolean[] phase2Failed = {false};
+
+            Runnable onPhase2Ready = () -> {
+                if (!activeDone[0] || !cooldownDone[0]) return;
+                if (phase2Failed[0]) return;
+
+                if (Boolean.TRUE.equals(hasActive[0])) {
+                    resetActionButton(actionBtn, actionProgress);
+                    emergencyDialogShowing = false;
+                    Toast.makeText(context, "You already have an active emergency request!",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                EmergencyRepository.CooldownState cs = cooldown[0];
+                if (cs != null && cs.isOnCooldown()) {
+                    resetActionButton(actionBtn, actionProgress);
+                    emergencyDialogShowing = false;
+                    showResolvedCooldownDialog(adminId, cs);
+                    return;
+                }
+
+                // All checks passed — restore button and show confirmation
+                resetActionButton(actionBtn, actionProgress);
+                new AlertDialog.Builder(context)
+                        .setTitle("Send Emergency Request")
+                        .setMessage("Do you want to notify the rescue station of your emergency?")
+                        .setPositiveButton("Yes", (dialog, which) -> {
+                            emergencyDialogShowing = false;
+                            sendEmergencyToFirestore(adminId, municipality, lat, lon,
+                                    fullName, phone, uid, profileImage);
+                        })
+                        .setNegativeButton("Cancel", (dialog, which) -> {
+                            emergencyDialogShowing = false;
+                            Toast.makeText(context, "Emergency request cancelled",
+                                    Toast.LENGTH_SHORT).show();
+                        })
+                        .setOnCancelListener(dialog -> emergencyDialogShowing = false)
+                        .show();
+            };
+
+            emergencyRepository.hasActiveEmergencyForUser(uid,
+                    new EmergencyRepository.Callback<Boolean>() {
+                @Override public void onSuccess(Boolean result) {
+                    mainHandler.post(() -> {
+                        hasActive[0]  = result;
+                        activeDone[0] = true;
+                        onPhase2Ready.run();
+                    });
+                }
+                @Override public void onError(Exception e) {
+                    mainHandler.post(() -> {
+                        if (phase2Failed[0]) return;
+                        phase2Failed[0] = true;
+                        resetActionButton(actionBtn, actionProgress);
+                        emergencyDialogShowing = false;
+                        Toast.makeText(context, "Error checking requests: " + e.getMessage(),
+                                Toast.LENGTH_SHORT).show();
+                    });
+                }
+            });
+
+            emergencyRepository.getResolvedEmergencyCooldown(uid,
+                    RESOLVED_COOLDOWN_BASE_MS, RESOLVED_COOLDOWN_MAX_MS,
+                    new EmergencyRepository.Callback<EmergencyRepository.CooldownState>() {
+                @Override public void onSuccess(EmergencyRepository.CooldownState result) {
+                    mainHandler.post(() -> {
+                        cooldown[0]     = result;
+                        cooldownDone[0] = true;
+                        onPhase2Ready.run();
+                    });
+                }
+                @Override public void onError(Exception e) {
+                    mainHandler.post(() -> {
+                        if (phase2Failed[0]) return;
+                        phase2Failed[0] = true;
+                        resetActionButton(actionBtn, actionProgress);
+                        emergencyDialogShowing = false;
+                        Toast.makeText(context, "Error checking cooldown: " + e.getMessage(),
+                                Toast.LENGTH_SHORT).show();
+                    });
+                }
+            });
+        };
+
+        // Kick off GPS (uses cached last-known — fastest possible)
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED ||
+                ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+                        == PackageManager.PERMISSION_GRANTED) {
+            fusedLocationClient.getLastLocation()
+                    .addOnSuccessListener(location -> {
+                        if (location != null) {
+                            locationResult[0] = location.getLatitude();
+                            locationResult[1] = location.getLongitude();
+                        }
+                        locationDone[0] = true;
+                        onBothReady.run();
+                    })
+                    .addOnFailureListener(e -> {
+                        locationDone[0] = true;
+                        onBothReady.run();
+                    });
+        } else {
+            locationDone[0] = true;
+        }
+
+        // Kick off profile fetch simultaneously — cache-first, one-shot guard
+        final boolean[] profileCallbackFired = {false};
+        accountRepository.loadCurrentUserProfile(new AccountRepository.Callback<UserProfile>() {
+            @Override public void onSuccess(UserProfile profile) {
+                if (profileCallbackFired[0]) return;
+                profileCallbackFired[0] = true;
+                profileResult[0] = profile;
+                profileDone[0]   = true;
+                onBothReady.run();
+            }
+            @Override public void onError(Exception e) {
+                if (profileCallbackFired[0]) return;
+                profileCallbackFired[0] = true;
+                if (failed[0]) return;
+                failed[0] = true;
+                resetActionButton(actionBtn, actionProgress);
+                emergencyDialogShowing = false;
+                Toast.makeText(context, "Failed to fetch user data: " + e.getMessage(),
                         Toast.LENGTH_SHORT).show();
             }
         });
-    }
-
-    private void createEmergencyRequest(String adminId, String municipality,
-                                        double userLat, double userLon,
-                                        String fullName, String phoneNumber, String uid,
-                                        String profileImageBase64) {
-        new AlertDialog.Builder(context)
-                .setTitle("Send Emergency Request")
-                .setMessage("Do you want to notify the rescue station of your emergency?")
-                .setPositiveButton("Yes", (dialog, which) ->
-                        sendEmergencyToFirestore(adminId, municipality, userLat, userLon,
-                                fullName, phoneNumber, uid, profileImageBase64))
-                .setNegativeButton("Cancel", (dialog, which) ->
-                        Toast.makeText(context, "Emergency request cancelled", Toast.LENGTH_SHORT).show())
-                .show();
-    }
-
-    private void checkResolvedEmergencyCooldown(String adminId, String municipality,
-                                                double userLat, double userLon,
-                                                String fullName, String phoneNumber, String uid,
-                                                String profileImageBase64) {
-        emergencyRepository.getResolvedEmergencyCooldown(uid, RESOLVED_COOLDOWN_BASE_MS,
-                RESOLVED_COOLDOWN_MAX_MS, new EmergencyRepository.Callback<EmergencyRepository.CooldownState>() {
-                    @Override
-                    public void onSuccess(EmergencyRepository.CooldownState cooldownState) {
-                        if (cooldownState != null && cooldownState.isOnCooldown()) {
-                            showResolvedCooldownDialog(adminId, cooldownState);
-                            return;
-                        }
-
-                        createEmergencyRequest(adminId, municipality, userLat, userLon,
-                                fullName, phoneNumber, uid, profileImageBase64);
-                    }
-
-                    @Override
-                    public void onError(Exception exception) {
-                        Toast.makeText(context, "Error checking emergency cooldown: "
-                                + exception.getMessage(), Toast.LENGTH_SHORT).show();
-                    }
-                });
     }
 
     private void showResolvedCooldownDialog(String adminId,
@@ -679,11 +807,35 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
         emergencyInFlight = true;
 
+        // Safety net: if the Firestore create call never responds (network drop, etc.),
+        // reset the flag after 30 seconds so the button works again.
+        Handler safetyHandler = new Handler(Looper.getMainLooper());
+        Runnable safetyReset = () -> {
+            if (emergencyInFlight) {
+                emergencyInFlight = false;
+                if (loadingDialog.isShowing()) {
+                    loadingDialog.dismiss();
+                }
+                Toast.makeText(context,
+                        "Request timed out. Please check your connection and try again.",
+                        Toast.LENGTH_LONG).show();
+            }
+        };
+        safetyHandler.postDelayed(safetyReset, 30_000);
+
+        // Also reset the flag whenever the dialog is dismissed for any reason
+        // (covers rotation, back-press bypasses since cancelable=false, OS kill, etc.)
+        loadingDialog.setOnDismissListener(d -> {
+            emergencyInFlight = false;
+            safetyHandler.removeCallbacks(safetyReset);
+        });
+
         emergencyRepository.createEmergencyRequest(adminId, municipality, userLat, userLon,
                 fullName, phoneNumber, uid, profileImageBase64, new EmergencyRepository.Callback<String>() {
                 @Override
                 public void onSuccess(String emergencyDocId) {
-                    emergencyInFlight = false; // request reached Firestore — cooldown already stamped
+                    safetyHandler.removeCallbacks(safetyReset);
+                    emergencyInFlight = false;
                     currentEmergencyDocId = emergencyDocId;
                     final EmergencyRepository.ListenerHandle[] listener = new EmergencyRepository.ListenerHandle[1];
 
@@ -726,7 +878,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                         }
                     });
 
-                    Handler handler = new Handler();
+                    Handler timeoutHandler = new Handler(Looper.getMainLooper());
                     Runnable timeoutRunnable = () -> {
                         if (loadingDialog.isShowing()) {
                             loadingDialog.dismiss();
@@ -734,15 +886,19 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                             if (listener[0] != null) listener[0].remove();
                         }
                     };
-                    handler.postDelayed(timeoutRunnable, 5 * 60 * 1000);
+                    timeoutHandler.postDelayed(timeoutRunnable, 5 * 60 * 1000);
+
+                    // Override dismiss listener now that we have the status listener to clean up too
                     loadingDialog.setOnDismissListener(d -> {
-                        handler.removeCallbacks(timeoutRunnable);
+                        emergencyInFlight = false;
+                        timeoutHandler.removeCallbacks(timeoutRunnable);
                         if (listener[0] != null) listener[0].remove();
                     });
                 }
 
                 @Override
                 public void onError(Exception exception) {
+                    safetyHandler.removeCallbacks(safetyReset);
                     emergencyInFlight = false;
                     loadingDialog.dismiss();
                     Toast.makeText(context, "Failed to notify station: " + exception.getMessage(),

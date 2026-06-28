@@ -83,17 +83,32 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnAction"
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="76dp"
-                android:text="SEND EMERGENCY ALERT"
-                android:textSize="19sp"
-                android:textStyle="bold"
-                android:backgroundTint="#D32F2F"
-                android:textColor="@android:color/white"
-                app:cornerRadius="16dp"
-                android:layout_marginBottom="14dp"/>
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnAction"
+                    android:layout_width="match_parent"
+                    android:layout_height="76dp"
+                    android:text="SEND EMERGENCY ALERT"
+                    android:textSize="19sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="#D32F2F"
+                    android:textColor="@android:color/white"
+                    app:cornerRadius="16dp"/>
+
+                <ProgressBar
+                    android:id="@+id/progressAction"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_gravity="center"
+                    android:indeterminate="true"
+                    android:indeterminateTint="@android:color/white"
+                    android:visibility="gone"/>
+
+            </FrameLayout>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMessenger"

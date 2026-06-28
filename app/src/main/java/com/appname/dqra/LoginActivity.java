@@ -8,7 +8,6 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
@@ -31,7 +30,6 @@ public class LoginActivity extends AppCompatActivity {
     private EditText txtEmail, txtPassword;
     private ImageView imgTogglePassword;
     private Button btnLogin;
-    private TextView tRegister;
     private ProgressBar progressBar;
     private androidx.cardview.widget.CardView btnGoogle;
 
@@ -51,16 +49,11 @@ public class LoginActivity extends AppCompatActivity {
         imgTogglePassword = findViewById(R.id.imgTogglePassword);
         btnLogin = findViewById(R.id.btnlogin);
         progressBar = findViewById(R.id.ProgressBar);
-        tRegister = findViewById(R.id.txtregister);
         btnGoogle = findViewById(R.id.btnGoogle);
 
         setupPasswordToggle();
 
         btnLogin.setOnClickListener(v -> loginUser());
-        tRegister.setOnClickListener(v -> {
-            startActivity(new Intent(LoginActivity.this, RegisterActivity.class));
-            finish();
-        });
 
         GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestIdToken(getString(R.string.default_web_client_id))

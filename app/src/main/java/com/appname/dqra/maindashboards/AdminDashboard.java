@@ -177,8 +177,17 @@ public class AdminDashboard extends BaseActivity {
 
                 if ("messenger".equals(source) && latStr != null && lonStr != null) {
                     try {
-                        emergencyLatitude = Double.parseDouble(latStr);
-                        emergencyLongitude = Double.parseDouble(lonStr);
+                        double parsedLat = Double.parseDouble(latStr);
+                        double parsedLon = Double.parseDouble(lonStr);
+
+                        // Validate coordinate ranges — reject obviously invalid values
+                        if (parsedLat < -90 || parsedLat > 90 || parsedLon < -180 || parsedLon > 180) {
+                            Log.w(TAG, "Rejected out-of-range coordinates: " + parsedLat + ", " + parsedLon);
+                            return;
+                        }
+
+                        emergencyLatitude = parsedLat;
+                        emergencyLongitude = parsedLon;
                         Phone = firstNonEmpty(intent.getStringExtra("phoneNumber"), "Via Messenger");
                         Reported = firstNonEmpty(intent.getStringExtra("reportedBy"), "Messenger User");
                         String messageText = intent.getStringExtra("messageText");
@@ -234,9 +243,10 @@ public class AdminDashboard extends BaseActivity {
                     new IntentFilter("EMERGENCY_ALERT_RECEIVED"),
                     Context.RECEIVER_NOT_EXPORTED);
         } else {
+            // Use NOT_EXPORTED on all supported versions to prevent spoofed broadcasts
             registerReceiver(messengerAlertReceiver,
                     new IntentFilter("EMERGENCY_ALERT_RECEIVED"),
-                    Context.RECEIVER_EXPORTED);
+                    Context.RECEIVER_NOT_EXPORTED);
         }
 
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Enforces HTTPS-only traffic for all connections.
+    Blocks cleartext HTTP so credentials and emergency data
+    cannot be intercepted on insecure networks (public WiFi, etc.)
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Trust system CAs only (no user-installed certificates) -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

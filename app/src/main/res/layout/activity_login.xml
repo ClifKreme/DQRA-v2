@@ -151,19 +151,5 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
-        <!-- Register Link -->
-        <TextView
-            android:id="@+id/txtregister"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:layout_marginTop="20dp"
-            android:clickable="true"
-            android:focusable="true"
-            android:minHeight="48dp"
-            android:padding="12dp"
-            android:text="Don't have an account? Click here"
-            android:textColor="@color/black"
-            android:textSize="14sp" />
     </LinearLayout>
 </ScrollView>
