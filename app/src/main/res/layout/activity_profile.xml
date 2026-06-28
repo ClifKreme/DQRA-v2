@@ -24,8 +24,7 @@
             android:text="Profile"
             android:textColor="#FFFFFF"
             android:textSize="22sp"
-            android:textStyle="bold"
-            android:fontFamily="@font/aclonica"/>
+            android:textStyle="bold"/>
 
         <!-- Burger menu -->
         <ImageButton

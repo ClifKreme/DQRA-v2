@@ -107,6 +107,13 @@
         <activity
             android:name="com.appname.dqra.LoginActivity"
             android:exported="false" />
+        <activity
+            android:name="com.appname.dqra.UserRegistrationActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name="com.appname.dqra.PendingApprovalActivity"
+            android:exported="false" />
 
         <activity
             android:name="com.appname.dqra.ISUFSTMAIN"
@@ -116,6 +123,9 @@
             android:exported="false" />
         <activity
             android:name="com.appname.dqra.AdminProfileActivity"
+            android:exported="false" />
+        <activity
+            android:name="com.appname.dqra.AdminRegistrationRequestsActivity"
             android:exported="false" />
         <activity android:name="com.appname.dqra.WebsiteActivity"
             android:exported="false" />
@@ -150,6 +160,16 @@
             android:name="com.appname.dqra.maindashboards.UserDashboard"
             android:exported="false" />
 
+        <!-- FileProvider for camera captures in registration -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_provider_paths" />
+        </provider>
 
     </application>
 </manifest>

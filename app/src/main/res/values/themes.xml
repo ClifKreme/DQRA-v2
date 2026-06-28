@@ -5,10 +5,17 @@
         <item name="android:statusBarColor">@color/white</item>
         <!-- Set status bar icon color: true = dark icons, false = light icons -->
         <item name="android:windowLightStatusBar">true</item> <!-- dark icons, for light background -->
+        <item name="android:buttonStyle">@style/Widget.DQRA.Button</item>
+        <item name="buttonStyle">@style/Widget.DQRA.Button</item>
     </style>
 
 
     <style name="Theme.DQRA" parent="Base.Theme.DQRA" />
+
+    <style name="Widget.DQRA.Button" parent="Widget.AppCompat.Button">
+        <item name="android:backgroundTint">@null</item>
+        <item name="backgroundTint">@null</item>
+    </style>
 
     <style name="ShapeAppearance.DQRA.CircleImage" parent="">
         <item name="cornerFamily">rounded</item>

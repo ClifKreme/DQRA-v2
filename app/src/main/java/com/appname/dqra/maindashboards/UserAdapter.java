@@ -746,9 +746,10 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
             locationDone[0] = true;
         }
 
-        // Kick off profile fetch simultaneously — cache-first, one-shot guard
+        // Kick off profile fetch simultaneously. Use a fresh Firestore read here so the
+        // emergency carries the latest approved selfie/profile image to the admin dashboard.
         final boolean[] profileCallbackFired = {false};
-        accountRepository.loadCurrentUserProfile(new AccountRepository.Callback<UserProfile>() {
+        accountRepository.loadCurrentUserProfileFresh(new AccountRepository.Callback<UserProfile>() {
             @Override public void onSuccess(UserProfile profile) {
                 if (profileCallbackFired[0]) return;
                 profileCallbackFired[0] = true;

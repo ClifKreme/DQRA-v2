@@ -3,5 +3,12 @@
         <!-- Customize your dark theme here -->
         <item name="android:statusBarColor">@color/white</item>
         <item name="android:windowLightStatusBar">true</item> <!-- for dark icons on light status bar -->
+        <item name="android:buttonStyle">@style/Widget.DQRA.Button</item>
+        <item name="buttonStyle">@style/Widget.DQRA.Button</item>
+    </style>
+
+    <style name="Widget.DQRA.Button" parent="Widget.AppCompat.Button">
+        <item name="android:backgroundTint">@null</item>
+        <item name="backgroundTint">@null</item>
     </style>
 </resources>

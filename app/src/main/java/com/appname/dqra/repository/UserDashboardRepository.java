@@ -4,6 +4,7 @@ import android.util.Log;
 
 import com.appname.dqra.cache.AppCache;
 import com.appname.dqra.model.RescueStation;
+import com.appname.dqra.security.AesCrypto;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
 
@@ -136,11 +137,11 @@ public class UserDashboardRepository {
     }
 
     private RescueStation stationFromDocument(QueryDocumentSnapshot document) {
-        String name = document.getString("stationName");
+        String name = AesCrypto.decrypt(document.getString("stationName"));
         String municipality = document.getString("municipality");
-        String phoneNumber = document.getString("stationPhone");
-        String phoneNumber2 = document.getString("stationPhone2");
-        String messengerLink = document.getString("messengerLink");
+        String phoneNumber = AesCrypto.decrypt(document.getString("stationPhone"));
+        String phoneNumber2 = AesCrypto.decrypt(document.getString("stationPhone2"));
+        String messengerLink = AesCrypto.decrypt(document.getString("messengerLink"));
         String profileImageBase64 = document.getString("profileImageBase64");
 
         RescueStation station = new RescueStation(name, municipality, phoneNumber);

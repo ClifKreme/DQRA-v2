@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
+        android:id="@+id/admin_action_registration_requests"
+        android:title="Registration Requests"
+        android:icon="@drawable/icon_notification" />
+    <item
         android:id="@+id/admin_action_emergency_contacts"
         android:title="Emergency Contacts"
         android:icon="@drawable/ic_contacts" />

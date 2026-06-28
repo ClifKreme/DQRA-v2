@@ -47,6 +47,9 @@ public class ProfileCheckActivity extends AppCompatActivity {
             case ADMIN_DASHBOARD:
                 intent = new Intent(this, AdminDashboard.class);
                 break;
+            case PENDING_APPROVAL:
+                intent = new Intent(this, PendingApprovalActivity.class);
+                break;
             case COMPLETE_PROFILE:
                 intent = new Intent(this, CompleteProfileActivity.class);
                 break;

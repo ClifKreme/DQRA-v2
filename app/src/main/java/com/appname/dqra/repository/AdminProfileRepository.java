@@ -2,6 +2,7 @@ package com.appname.dqra.repository;
 
 import com.appname.dqra.cache.AppCache;
 import com.appname.dqra.model.AdminProfile;
+import com.appname.dqra.security.AesCrypto;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FirebaseFirestore;
 
@@ -58,10 +59,10 @@ public class AdminProfileRepository {
                     Long lastUpdated = document.getLong("profileLastUpdatedAt");
                     Long photoUpdated = document.getLong("photoLastUpdatedAt");
                     AdminProfile profile = new AdminProfile(
-                            document.getString("stationName"),
+                            AesCrypto.decrypt(document.getString("stationName")),
                             document.getString("municipality"),
-                            document.getString("stationPhone"),
-                            document.getString("email"),
+                            AesCrypto.decrypt(document.getString("stationPhone")),
+                            AesCrypto.decrypt(document.getString("email")),
                             document.getString("profileImageBase64"),
                             lastUpdated != null ? lastUpdated : 0L,
                             photoUpdated != null ? photoUpdated : 0L);
@@ -85,9 +86,9 @@ public class AdminProfileRepository {
         }
 
         Map<String, Object> updates = new HashMap<>();
-        updates.put("stationName", stationName);
+        updates.put("stationName", AesCrypto.encrypt(stationName));
         updates.put("municipality", municipality);
-        updates.put("stationPhone", stationPhone);
+        updates.put("stationPhone", AesCrypto.encrypt(stationPhone));
         updates.put("profileLastUpdatedAt", System.currentTimeMillis());
 
         firestore.collection(ADMINS_COLLECTION).document(userId)

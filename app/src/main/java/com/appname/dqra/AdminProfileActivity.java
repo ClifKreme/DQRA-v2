@@ -1,6 +1,9 @@
 package com.appname.dqra;
 
 import android.app.AlertDialog;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -8,8 +11,11 @@ import android.graphics.Matrix;
 import android.graphics.Outline;
 import android.media.ExifInterface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
+import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewOutlineProvider;
 import android.widget.Button;
@@ -17,17 +23,21 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.ImageView;
-import android.widget.PopupMenu;
+import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
 
 import com.appname.dqra.maindashboards.AdminDashboard;
 import com.appname.dqra.model.AdminProfile;
 import com.appname.dqra.repository.AdminProfileRepository;
+import com.appname.dqra.repository.UserRegistrationRepository;
+import com.google.firebase.firestore.ListenerRegistration;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -39,7 +49,14 @@ public class AdminProfileActivity extends BaseActivity {
     private static final int PROFILE_IMAGE_QUALITY = 70;
     private static final long UPDATE_COOLDOWN_MS = TimeUnit.DAYS.toMillis(30);
 
+    private static final String NOTIF_CHANNEL_ID   = "RegistrationRequests";
+    private static final String NOTIF_CHANNEL_NAME = "Registration Requests";
+    private static final int    NOTIF_ID_NEW_REQ   = 2001;
+
     private AdminProfileRepository adminProfileRepository;
+    private UserRegistrationRepository registrationRepository;
+    private ListenerRegistration pendingCountListener;
+    private int lastKnownPendingCount = -1; // -1 = not yet loaded
     private long profileLastUpdatedAt = 0L;
     private long photoLastUpdatedAt = 0L;
 
@@ -56,6 +73,7 @@ public class AdminProfileActivity extends BaseActivity {
     // Action buttons
     private Button btnAdminSave, btnAdminCancel;
     private ImageButton btnAdminEdit, btnAdminMenu;
+    private TextView tvMenuBadge;
 
     private ActivityResultLauncher<String> pickProfileImageLauncher;
     private String currentProfileImageBase64;
@@ -67,11 +85,14 @@ public class AdminProfileActivity extends BaseActivity {
         setActiveTab(Tab.PROFILE);
 
         adminProfileRepository = new AdminProfileRepository();
+        registrationRepository = new UserRegistrationRepository(this);
+        createNotificationChannel();
 
         setupImagePicker();
         initializeViews();
         setupListeners();
         loadAdminProfile();
+        startPendingRequestsListener();
     }
 
     @Override
@@ -114,6 +135,7 @@ public class AdminProfileActivity extends BaseActivity {
         btnAdminMenu   = findViewById(R.id.btnAdminMenu);
         btnAdminSave   = findViewById(R.id.btnAdminSave);
         btnAdminCancel = findViewById(R.id.btnAdminCancel);
+        tvMenuBadge    = findViewById(R.id.tvMenuBadge);
     }
 
     private void setupListeners() {
@@ -151,28 +173,54 @@ public class AdminProfileActivity extends BaseActivity {
     }
 
     private void showBurgerMenu(View anchor) {
-        PopupMenu popupMenu = new PopupMenu(this, anchor);
-        popupMenu.getMenuInflater().inflate(R.menu.admin_profile_menu, popupMenu.getMenu());
+        View menuView = LayoutInflater.from(this)
+                .inflate(R.layout.layout_admin_popup_menu, null);
 
-        popupMenu.setOnMenuItemClickListener(item -> {
-            int id = item.getItemId();
-            if (id == R.id.admin_action_emergency_contacts) {
-                startActivity(new Intent(this, EmergencyContactsActivity.class));
-                return true;
-            } else if (id == R.id.admin_action_help) {
-                startActivity(new Intent(this, HelpSupportActivity.class));
-                return true;
-            } else if (id == R.id.admin_action_about) {
-                startActivity(new Intent(this, AboutActivity.class));
-                return true;
-            } else if (id == R.id.admin_action_logout) {
-                showLogoutConfirmation();
-                return true;
-            }
-            return false;
+        // Bind badge count to the menu item
+        TextView menuItemBadge = menuView.findViewById(R.id.tvMenuItemBadge);
+        if (lastKnownPendingCount > 0) {
+            menuItemBadge.setVisibility(View.VISIBLE);
+            menuItemBadge.setText(lastKnownPendingCount > 99 ? "99+" : String.valueOf(lastKnownPendingCount));
+        } else {
+            menuItemBadge.setVisibility(View.GONE);
+        }
+
+        PopupWindow popup = new PopupWindow(
+                menuView,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                true);
+        popup.setElevation(16f);
+        popup.setOutsideTouchable(true);
+        popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(
+                android.graphics.Color.TRANSPARENT));
+
+        // Wire menu items
+        menuView.findViewById(R.id.menuItemRegistrationRequests).setOnClickListener(v -> {
+            popup.dismiss();
+            startActivity(new Intent(this, AdminRegistrationRequestsActivity.class));
+        });
+        menuView.findViewById(R.id.menuItemEmergencyContacts).setOnClickListener(v -> {
+            popup.dismiss();
+            startActivity(new Intent(this, EmergencyContactsActivity.class));
+        });
+        menuView.findViewById(R.id.menuItemHelp).setOnClickListener(v -> {
+            popup.dismiss();
+            startActivity(new Intent(this, HelpSupportActivity.class));
+        });
+        menuView.findViewById(R.id.menuItemAbout).setOnClickListener(v -> {
+            popup.dismiss();
+            startActivity(new Intent(this, AboutActivity.class));
+        });
+        menuView.findViewById(R.id.menuItemLogout).setOnClickListener(v -> {
+            popup.dismiss();
+            showLogoutConfirmation();
         });
 
-        popupMenu.show();
+        // Show below and aligned to the end of the anchor
+        menuView.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+        int menuWidth = menuView.getMeasuredWidth();
+        popup.showAsDropDown(anchor, anchor.getWidth() - menuWidth, 0, Gravity.NO_GRAVITY);
     }
 
     // ─── Photo options ───────────────────────────────────────────────────────
@@ -466,6 +514,89 @@ public class AdminProfileActivity extends BaseActivity {
         if (largestSide <= PROFILE_IMAGE_MAX_SIZE) return bitmap;
         float scale = PROFILE_IMAGE_MAX_SIZE / (float) largestSide;
         return Bitmap.createScaledBitmap(bitmap, Math.round(width * scale), Math.round(height * scale), true);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (pendingCountListener != null) {
+            pendingCountListener.remove();
+            pendingCountListener = null;
+        }
+        super.onDestroy();
+    }
+
+    // ─── Pending requests badge + notification ───────────────────────────────
+
+    private void startPendingRequestsListener() {
+        pendingCountListener = registrationRepository.listenForPendingRequests(
+                new UserRegistrationRepository.RequestListener() {
+                    @Override
+                    public void onRequestsChanged(java.util.List<com.appname.dqra.model.UserRegistrationRequest> requests) {
+                        int count = requests.size();
+                        updateBadge(count);
+                        // Fire a notification only when count goes up (new request arrived)
+                        if (lastKnownPendingCount >= 0 && count > lastKnownPendingCount) {
+                            int newOnes = count - lastKnownPendingCount;
+                            fireNewRequestNotification(newOnes);
+                        }
+                        lastKnownPendingCount = count;
+                    }
+
+                    @Override
+                    public void onError(Exception exception) {
+                        // silently ignore badge errors
+                    }
+                });
+    }
+
+    private void updateBadge(int count) {
+        if (tvMenuBadge == null) return;
+        if (count <= 0) {
+            tvMenuBadge.setVisibility(View.GONE);
+        } else {
+            tvMenuBadge.setVisibility(View.VISIBLE);
+            tvMenuBadge.setText(count > 99 ? "99+" : String.valueOf(count));
+        }
+    }
+
+    private void fireNewRequestNotification(int newCount) {
+        String title = newCount == 1
+                ? "New Registration Request"
+                : newCount + " New Registration Requests";
+        String body = newCount == 1
+                ? "A user has submitted a registration request. Tap to review."
+                : newCount + " users have submitted registration requests. Tap to review.";
+
+        Intent intent = new Intent(this, AdminRegistrationRequestsActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        int flags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                ? PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT
+                : PendingIntent.FLAG_UPDATE_CURRENT;
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_person)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent);
+
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        nm.notify(NOTIF_ID_NEW_REQ, builder.build());
+    }
+
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    NOTIF_CHANNEL_ID,
+                    NOTIF_CHANNEL_NAME,
+                    NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("Alerts when users submit registration requests");
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            nm.createNotificationChannel(channel);
+        }
     }
 
     // ─── Auth ────────────────────────────────────────────────────────────────

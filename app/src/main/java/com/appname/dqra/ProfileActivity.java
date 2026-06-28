@@ -27,9 +27,6 @@ import androidx.lifecycle.ViewModelProvider;
 import com.appname.dqra.model.UserProfile;
 import com.appname.dqra.viewmodel.OperationState;
 import com.appname.dqra.viewmodel.ProfileViewModel;
-import com.google.android.gms.auth.api.signin.GoogleSignIn;
-import com.google.android.gms.auth.api.signin.GoogleSignInClient;
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -53,7 +50,6 @@ public class ProfileActivity extends BaseActivity {
     private ImageButton btnEdit, btnMenu;
     private Button btnSave, btnCancel;
 
-    private GoogleSignInClient googleSignInClient;
     private ProfileViewModel viewModel;
     private ActivityResultLauncher<String> pickProfileImageLauncher;
     private String currentProfileImageBase64;
@@ -65,12 +61,6 @@ public class ProfileActivity extends BaseActivity {
         setActiveTab(Tab.PROFILE);
 
         viewModel = new ViewModelProvider(this).get(ProfileViewModel.class);
-
-        GoogleSignInOptions gso = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestIdToken(getString(R.string.default_web_client_id))
-                .requestEmail()
-                .build();
-        googleSignInClient = GoogleSignIn.getClient(this, gso);
 
         setupImagePicker();
         initializeViews();
@@ -362,11 +352,9 @@ public class ProfileActivity extends BaseActivity {
 
     private void logout() {
         viewModel.signOut();
-        googleSignInClient.signOut().addOnCompleteListener(this, task -> {
-            Toast.makeText(this, "Successfully logged out", Toast.LENGTH_SHORT).show();
-            startActivity(new Intent(this, LoginActivity.class)
-                    .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
-            finish();
-        });
+        Toast.makeText(this, "Successfully logged out", Toast.LENGTH_SHORT).show();
+        startActivity(new Intent(this, LoginActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+        finish();
     }
 }

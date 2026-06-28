@@ -1,6 +1,7 @@
 package com.appname.dqra.repository;
 
 import com.appname.dqra.model.AppFeedback;
+import com.appname.dqra.security.AesCrypto;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -112,7 +113,10 @@ public class FeedbackRepository {
                 .addOnSuccessListener(adminDoc -> {
                     if (adminDoc.exists()) {
                         callback.onSuccess(feedbackSender(uid,
-                                firstNonEmpty(adminDoc.getString("stationName"), adminDoc.getString("email"), "Admin"),
+                                firstNonEmpty(
+                                        AesCrypto.decrypt(adminDoc.getString("stationName")),
+                                        AesCrypto.decrypt(adminDoc.getString("email")),
+                                        "Admin"),
                                 "Admin",
                                 firstNonEmpty(adminDoc.getString("municipality"), "")));
                         return;
@@ -140,9 +144,15 @@ public class FeedbackRepository {
     private void resolveUserInfo(String uid, Callback<AppFeedback> callback) {
         firestore.collection(USERS_COLLECTION).document(uid).get()
                 .addOnSuccessListener(userDoc -> callback.onSuccess(feedbackSender(uid,
-                        firstNonEmpty(userDoc.getString("fullName"), userDoc.getString("email"), "User"),
+                        firstNonEmpty(
+                                AesCrypto.decrypt(userDoc.getString("fullName")),
+                                AesCrypto.decrypt(userDoc.getString("email")),
+                                "User"),
                         "User",
-                        firstNonEmpty(userDoc.getString("municipality"), userDoc.getString("address"), ""))))
+                        firstNonEmpty(
+                                userDoc.getString("municipality"),
+                                AesCrypto.decrypt(userDoc.getString("address")),
+                                ""))))
                 .addOnFailureListener(callback::onError);
     }
 

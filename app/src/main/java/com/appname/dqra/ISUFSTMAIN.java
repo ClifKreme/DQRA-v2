@@ -26,12 +26,18 @@ public class ISUFSTMAIN extends AppCompatActivity {
 
         // CardView acting as the Register Admin button
         CardView btnRegister = findViewById(R.id.btn1);
+        CardView btnRegistrationRequests = findViewById(R.id.btnRegistrationRequests);
         CardView btnEmergencyContacts = findViewById(R.id.btnManageEmergencyContacts);
         CardView btnViewAppFeedback = findViewById(R.id.btnViewAppFeedback);
         Button btnLogout = findViewById(R.id.btnLogout);
 
         btnRegister.setOnClickListener(v -> {
             Intent intent = new Intent(ISUFSTMAIN.this, MainAdminRegister.class);
+            startActivity(intent);
+        });
+
+        btnRegistrationRequests.setOnClickListener(v -> {
+            Intent intent = new Intent(ISUFSTMAIN.this, AdminRegistrationRequestsActivity.class);
             startActivity(intent);
         });
 

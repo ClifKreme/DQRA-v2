@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
@@ -21,8 +22,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="20dp"
             app:cardElevation="4dp"
-            app:cardBackgroundColor="#FFFFFF"
-            xmlns:app="http://schemas.android.com/apk/res-auto">
+            app:cardBackgroundColor="#FFFFFF">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -31,7 +31,6 @@
                 android:gravity="center_vertical"
                 android:padding="16dp">
 
-                <!-- Back Arrow Button -->
                 <ImageView
                     android:id="@+id/btnLogout"
                     android:layout_width="36dp"
@@ -43,7 +42,6 @@
                     android:tint="#FFA726"
                     android:padding="4dp"/>
 
-                <!-- Person Icon -->
                 <ImageView
                     android:layout_width="36dp"
                     android:layout_height="36dp"
@@ -52,7 +50,6 @@
                     android:tint="#FFA726"
                     android:layout_marginStart="8dp"/>
 
-                <!-- Title -->
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -86,8 +83,7 @@
             android:layout_height="wrap_content"
             app:cardCornerRadius="20dp"
             app:cardElevation="4dp"
-            app:cardBackgroundColor="#FFFFFF"
-            xmlns:app="http://schemas.android.com/apk/res-auto">
+            app:cardBackgroundColor="#FFFFFF">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -95,7 +91,7 @@
                 android:orientation="vertical"
                 android:padding="20dp">
 
-                <!-- ===== ADMIN ACCOUNT DETAILS SECTION ===== -->
+                <!-- Admin Account Details Section -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -120,7 +116,7 @@
                         android:textStyle="bold"/>
                 </LinearLayout>
 
-                <!-- Email Field -->
+                <!-- Email -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -135,7 +131,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="✉  Email"
+                        android:text="&#x2709;  Email"
                         android:textColor="#888888"
                         android:textSize="11sp"/>
 
@@ -144,7 +140,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="@null"
-                        android:hint="e.g., admin@gmail.com"
+                        android:hint="Email"
                         android:inputType="textEmailAddress"
                         android:textColor="#000000"
                         android:textColorHint="#BBBBBB"
@@ -153,7 +149,7 @@
                         android:layout_marginTop="2dp"/>
                 </LinearLayout>
 
-                <!-- Password Field -->
+                <!-- Password -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -168,7 +164,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="🔒  Password"
+                        android:text="Password"
                         android:textColor="#888888"
                         android:textSize="11sp"/>
 
@@ -182,7 +178,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:background="@null"
-                            android:hint="e.g., Password123"
+                            android:hint="Password"
                             android:inputType="textPassword"
                             android:textColor="#000000"
                             android:textColorHint="#BBBBBB"
@@ -203,7 +199,7 @@
                     </FrameLayout>
                 </LinearLayout>
 
-                <!-- Municipality Field (AutoComplete) -->
+                <!-- Municipality -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -218,7 +214,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="📍  Municipality"
+                        android:text="&#x1F4CD;  Municipality"
                         android:textColor="#888888"
                         android:textSize="11sp"/>
 
@@ -227,7 +223,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="@null"
-                        android:hint="e.g., Ajuy"
+                        android:hint="Municipality"
                         android:textColor="#000000"
                         android:textColorHint="#BBBBBB"
                         android:textSize="15sp"
@@ -241,7 +237,7 @@
                         android:inputType="textCapWords"/>
                 </LinearLayout>
 
-                <!-- ===== RESCUE STATION DETAILS SECTION ===== -->
+                <!-- Rescue Station Details Section -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -252,7 +248,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="🚒 "
+                        android:text="&#x1F692; "
                         android:textSize="18sp"/>
 
                     <TextView
@@ -264,7 +260,7 @@
                         android:textStyle="bold"/>
                 </LinearLayout>
 
-                <!-- Station Name Field -->
+                <!-- Station Name -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -279,7 +275,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="🏢  Station Name"
+                        android:text="&#x1F3E2;  Station Name"
                         android:textColor="#888888"
                         android:textSize="11sp"/>
 
@@ -288,7 +284,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="@null"
-                        android:hint="e.g., Barotac Nuevo Rescue Station"
+                        android:hint="Station name"
                         android:textColor="#000000"
                         android:textColorHint="#BBBBBB"
                         android:textSize="15sp"
@@ -296,7 +292,7 @@
                         android:layout_marginTop="2dp"/>
                 </LinearLayout>
 
-                <!-- Phone Number 1 Field -->
+                <!-- Phone 1 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -311,7 +307,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="📞  Phone Number 1"
+                        android:text="&#x1F4DE;  Phone Number 1"
                         android:textColor="#888888"
                         android:textSize="11sp"/>
 
@@ -320,7 +316,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="@null"
-                        android:hint="e.g., 09123456789"
+                        android:hint="Phone number"
                         android:inputType="phone"
                         android:textColor="#000000"
                         android:textColorHint="#BBBBBB"
@@ -329,7 +325,7 @@
                         android:layout_marginTop="2dp"/>
                 </LinearLayout>
 
-                <!-- Phone Number 2 (Optional) Field -->
+                <!-- Phone 2 (Optional) -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -344,7 +340,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="📞  Phone Number 2 (Optional)"
+                        android:text="&#x1F4DE;  Phone Number 2 (Optional)"
                         android:textColor="#888888"
                         android:textSize="11sp"/>
 
@@ -353,7 +349,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="@null"
-                        android:hint="e.g., 09987654321"
+                        android:hint="Phone number (optional)"
                         android:inputType="phone"
                         android:textColor="#000000"
                         android:textColorHint="#BBBBBB"
@@ -362,7 +358,7 @@
                         android:layout_marginTop="2dp"/>
                 </LinearLayout>
 
-                <!-- Facebook Page Name Field -->
+                <!-- Facebook Page -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -377,7 +373,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="📱  Facebook Page Name"
+                        android:text="&#x1F4F1;  Facebook Page Name"
                         android:textColor="#888888"
                         android:textSize="11sp"/>
 
@@ -386,7 +382,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:background="@null"
-                        android:hint="e.g., Rescue Station"
+                        android:hint="Facebook page name"
                         android:textColor="#000000"
                         android:textColorHint="#BBBBBB"
                         android:textSize="15sp"
@@ -409,7 +405,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="56dp"
                     android:background="@drawable/admin_register_btn_green"
-                    android:text="✔  REGISTER ADMIN"
+                    android:text="REGISTER ADMIN"
                     android:textColor="#FFFFFF"
                     android:textSize="15sp"
                     android:textStyle="bold"

@@ -3,9 +3,8 @@ package com.appname.dqra.repository;
 import com.appname.dqra.cache.AppCache;
 import com.appname.dqra.model.StartDestination;
 import com.appname.dqra.model.UserProfile;
+import com.appname.dqra.security.AesCrypto;
 import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.auth.GoogleAuthProvider;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FirebaseFirestore;
 
@@ -22,6 +21,7 @@ public class AccountRepository {
     private static final String USERS_COLLECTION = "users";
     private static final String ADMINS_COLLECTION = "admins_with_stations";
     private static final String MAIN_COLLECTION = "main";
+    private static final String REGISTRATION_REQUESTS_COLLECTION = "user_registration_requests";
 
     private final FirebaseAuth auth;
     private final FirebaseFirestore firestore;
@@ -57,40 +57,6 @@ public class AccountRepository {
                 .addOnFailureListener(callback::onError);
     }
 
-    public void loginWithGoogleToken(String idToken, Callback<Boolean> callback) {
-        auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
-                .addOnSuccessListener(authResult -> {
-                    FirebaseUser user = auth.getCurrentUser();
-                    if (user == null) {
-                        callback.onError(new IllegalStateException("Authentication failed"));
-                        return;
-                    }
-
-                    firestore.collection(USERS_COLLECTION).document(user.getUid()).get()
-                            .addOnSuccessListener(document -> callback.onSuccess(!document.exists()))
-                            .addOnFailureListener(callback::onError);
-                })
-                .addOnFailureListener(callback::onError);
-    }
-
-    public void createGoogleUser(Callback<Void> callback) {
-        FirebaseUser user = auth.getCurrentUser();
-        if (user == null) {
-            callback.onError(new IllegalStateException("User is not signed in"));
-            return;
-        }
-
-        Map<String, Object> userMap = new HashMap<>();
-        userMap.put("role", "User");
-        userMap.put("email", user.getEmail());
-        userMap.put("termsAccepted", true);
-        userMap.put("createdAt", System.currentTimeMillis());
-
-        firestore.collection(USERS_COLLECTION).document(user.getUid()).set(userMap)
-                .addOnSuccessListener(unused -> callback.onSuccess(null))
-                .addOnFailureListener(callback::onError);
-    }
-
     public void resolveLoginRole(Callback<StartDestination> callback) {
         String userId = getCurrentUserId();
         if (userId == null) {
@@ -113,13 +79,35 @@ public class AccountRepository {
                                                     if (adminDoc.exists()) {
                                                         callback.onSuccess(StartDestination.ADMIN_DASHBOARD);
                                                     } else {
-                                                        callback.onError(new IllegalStateException("User account not found"));
+                                                        resolvePendingRegistration(userId, callback);
                                                     }
                                                 })
                                                 .addOnFailureListener(callback::onError);
                                     }
                                 })
                                 .addOnFailureListener(callback::onError);
+                    }
+                })
+                .addOnFailureListener(callback::onError);
+    }
+
+    private void resolvePendingRegistration(String userId, Callback<StartDestination> callback) {
+        firestore.collection(REGISTRATION_REQUESTS_COLLECTION).document(userId).get()
+                .addOnSuccessListener(requestDoc -> {
+                    if (!requestDoc.exists()) {
+                        callback.onError(new IllegalStateException("User account not found"));
+                        return;
+                    }
+
+                    String status = requestDoc.getString("status");
+                    if ("pending".equalsIgnoreCase(status)) {
+                        callback.onSuccess(StartDestination.PENDING_APPROVAL);
+                    } else if ("rejected".equalsIgnoreCase(status)) {
+                        signOut();
+                        callback.onError(new IllegalStateException(
+                                "Your registration request was rejected. Please contact an admin or submit again."));
+                    } else {
+                        callback.onSuccess(StartDestination.USER_DASHBOARD);
                     }
                 })
                 .addOnFailureListener(callback::onError);
@@ -160,8 +148,7 @@ public class AccountRepository {
         firestore.collection(USERS_COLLECTION).document(userId).get()
                 .addOnSuccessListener(userDoc -> {
                     if (!userDoc.exists()) {
-                        signOut();
-                        callback.onSuccess(StartDestination.LOGIN);
+                        resolvePendingStartDestination(userId, callback);
                         return;
                     }
 
@@ -169,6 +156,28 @@ public class AccountRepository {
                     callback.onSuccess(profile.isComplete()
                             ? StartDestination.USER_DASHBOARD
                             : StartDestination.COMPLETE_PROFILE);
+                })
+                .addOnFailureListener(callback::onError);
+    }
+
+    private void resolvePendingStartDestination(String userId, Callback<StartDestination> callback) {
+        firestore.collection(REGISTRATION_REQUESTS_COLLECTION).document(userId).get()
+                .addOnSuccessListener(requestDoc -> {
+                    if (!requestDoc.exists()) {
+                        signOut();
+                        callback.onSuccess(StartDestination.LOGIN);
+                        return;
+                    }
+
+                    String status = requestDoc.getString("status");
+                    if ("pending".equalsIgnoreCase(status)) {
+                        callback.onSuccess(StartDestination.PENDING_APPROVAL);
+                    } else if ("approved".equalsIgnoreCase(status)) {
+                        callback.onSuccess(StartDestination.USER_DASHBOARD);
+                    } else {
+                        signOut();
+                        callback.onSuccess(StartDestination.LOGIN);
+                    }
                 })
                 .addOnFailureListener(callback::onError);
     }
@@ -235,9 +244,9 @@ public class AccountRepository {
         }
 
         Map<String, Object> updates = new HashMap<>();
-        updates.put("fullName", fullName);
-        updates.put("phone", phone);
-        updates.put("address", address);
+        updates.put("fullName", AesCrypto.encrypt(fullName));
+        updates.put("phone", AesCrypto.encrypt(phone));
+        updates.put("address", AesCrypto.encrypt(address));
         updates.put("profileLastUpdatedAt", System.currentTimeMillis());
 
         firestore.collection(USERS_COLLECTION).document(userId)
@@ -299,9 +308,9 @@ public class AccountRepository {
         }
 
         Map<String, Object> updates = new HashMap<>();
-        updates.put("fullName", fullName);
-        updates.put("phone", phone);
-        updates.put("address", address);
+        updates.put("fullName", AesCrypto.encrypt(fullName));
+        updates.put("phone", AesCrypto.encrypt(phone));
+        updates.put("address", AesCrypto.encrypt(address));
         updates.put("profileCompleted", true);
         updates.put("profileCompletedAt", System.currentTimeMillis());
 
@@ -324,10 +333,10 @@ public class AccountRepository {
         Long photoUpdated = document.getLong("photoLastUpdatedAt");
         return new UserProfile(
                 document.getId(),
-                document.getString("fullName"),
-                document.getString("email"),
-                document.getString("phone"),
-                document.getString("address"),
+                AesCrypto.decrypt(document.getString("fullName")),
+                AesCrypto.decrypt(document.getString("email")),
+                AesCrypto.decrypt(document.getString("phone")),
+                AesCrypto.decrypt(document.getString("address")),
                 document.getString("role"),
                 document.getString("profileImageBase64"),
                 lastUpdated != null ? lastUpdated : 0L,

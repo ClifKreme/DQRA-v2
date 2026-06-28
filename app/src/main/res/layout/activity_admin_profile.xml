@@ -24,19 +24,38 @@
             android:text="Profile"
             android:textColor="#FFFFFF"
             android:textSize="22sp"
-            android:textStyle="bold"
-            android:fontFamily="@font/aclonica"/>
+            android:textStyle="bold"/>
 
-        <!-- Burger menu button -->
-        <ImageButton
-            android:id="@+id/btnAdminMenu"
+        <!-- Burger menu button with notification badge -->
+        <FrameLayout
             android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="?android:attr/selectableItemBackgroundBorderless"
-            android:src="@drawable/ic_menu"
-            android:tint="#FFFFFF"
-            android:padding="8dp"
-            android:contentDescription="Menu"/>
+            android:layout_height="40dp">
+
+            <ImageButton
+                android:id="@+id/btnAdminMenu"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_menu"
+                android:tint="#FFFFFF"
+                android:padding="8dp"
+                android:contentDescription="Menu"/>
+
+            <!-- Red badge — hidden when count is 0 -->
+            <TextView
+                android:id="@+id/tvMenuBadge"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_gravity="top|end"
+                android:background="@drawable/badge_bg"
+                android:gravity="center"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:visibility="gone"
+                android:elevation="4dp"/>
+        </FrameLayout>
     </LinearLayout>
 
     <!-- ===== HEADER CARD: Avatar left, Name + edit right ===== -->
