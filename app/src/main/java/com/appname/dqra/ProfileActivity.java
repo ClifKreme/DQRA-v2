@@ -129,7 +129,19 @@ public class ProfileActivity extends BaseActivity {
         FrameLayout flAvatarContainer = findViewById(R.id.flProfileAvatarContainer);
         flAvatarContainer.setOnClickListener(v -> showProfilePhotoOptions());
 
-        btnEdit.setOnClickListener(v -> enterEditMode());
+        btnEdit.setOnClickListener(v -> {
+            long daysLeft = viewModel.getDaysUntilNextUpdate();
+            if (daysLeft > 0) {
+                new android.app.AlertDialog.Builder(this)
+                        .setTitle("Update Not Allowed")
+                        .setMessage("You can only update your profile once per month.\n"
+                                + "Please wait " + daysLeft + " more day(s).")
+                        .setPositiveButton("OK", null)
+                        .show();
+                return;
+            }
+            enterEditMode();
+        });
         btnSave.setOnClickListener(v -> saveProfile());
         btnCancel.setOnClickListener(v -> exitEditMode());
         btnMenu.setOnClickListener(this::showMenu);
@@ -178,6 +190,27 @@ public class ProfileActivity extends BaseActivity {
     private void showProfilePhotoOptions() {
         boolean hasPhoto = currentProfileImageBase64 != null
                 && !currentProfileImageBase64.trim().isEmpty();
+
+        // Check photo cooldown before offering "Change Photo" or "Upload Photo"
+        long daysLeft = viewModel.getDaysUntilNextPhotoUpdate();
+        if (daysLeft > 0) {
+            if (hasPhoto) {
+                // Still let them view, but block changing
+                new AlertDialog.Builder(this)
+                        .setTitle("Profile Photo")
+                        .setItems(new String[]{"View Photo"}, (dialog, which) -> viewFullScreenPhoto())
+                        .show();
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("Photo Change Not Allowed")
+                        .setMessage("You can only change your profile photo once per month.\n"
+                                + "Please wait " + daysLeft + " more day(s).")
+                        .setPositiveButton("OK", null)
+                        .show();
+            }
+            return;
+        }
+
         String[] options = hasPhoto
                 ? new String[]{"View Photo", "Change Photo"}
                 : new String[]{"Upload Photo"};

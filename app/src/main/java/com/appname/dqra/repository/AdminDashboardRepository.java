@@ -8,6 +8,7 @@ import com.appname.dqra.viewmodel.AdminEmergencyStats;
 import com.google.firebase.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FieldValue;
+import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
@@ -15,6 +16,7 @@ import com.google.firebase.firestore.SetOptions;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Calendar;
 
 public class AdminDashboardRepository {
 
@@ -113,6 +115,7 @@ public class AdminDashboardRepository {
     public ListenerRegistration listenForEmergencies(String municipality,
                                                      String currentEmergencyId,
                                                      EmergencyListener listener) {
+        String currentAdminId = getCurrentUserId();
         return firestore.collection(EMERGENCIES_COLLECTION)
                 .whereEqualTo("municipality", municipality)
                 .addSnapshotListener((queryDocumentSnapshots, error) -> {
@@ -146,7 +149,8 @@ public class AdminDashboardRepository {
                             mostRecentPendingEmergency = document;
                         }
 
-                        if (emergencyId.equals(currentEmergencyId)) {
+                        if (emergencyId.equals(currentEmergencyId)
+                                && shouldShowEmergencyToAdmin(document, currentAdminId)) {
                             currentEmergencyDoc = document;
                         }
                     }
@@ -162,6 +166,14 @@ public class AdminDashboardRepository {
     }
 
     public void fetchStats(String municipality, ValueCallback<AdminEmergencyStats> callback) {
+        String currentAdminId = getCurrentUserId();
+        if (currentAdminId == null) {
+            callback.onError(new IllegalStateException("Admin is not signed in"));
+            return;
+        }
+
+        long startOfToday = startOfTodayMillis();
+
         firestore.collection(EMERGENCIES_COLLECTION)
                 .whereEqualTo("municipality", municipality)
                 .get()
@@ -174,9 +186,13 @@ public class AdminDashboardRepository {
                         String status = document.getString("status");
                         if (STATUS_PENDING.equals(status)) {
                             pendingCount++;
-                        } else if (STATUS_CONFIRMED.equals(status)) {
+                        } else if (STATUS_CONFIRMED.equals(status)
+                                && isHandledByCurrentAdmin(document, currentAdminId)
+                                && getAdminStatusTimestamp(document, status) >= startOfToday) {
                             activeCount++;
-                        } else if (STATUS_RESOLVED.equals(status) || "completed".equals(status)) {
+                        } else if ((STATUS_RESOLVED.equals(status) || "completed".equals(status))
+                                && isHandledByCurrentAdmin(document, currentAdminId)
+                                && getAdminStatusTimestamp(document, status) >= startOfToday) {
                             resolvedCount++;
                         }
                     }
@@ -187,22 +203,61 @@ public class AdminDashboardRepository {
     }
 
     public void updateEmergencyStatus(String emergencyId, String status, ValueCallback<Void> callback) {
+        if (STATUS_CONFIRMED.equals(status)) {
+            claimEmergency(emergencyId, callback);
+            return;
+        }
+
         Map<String, Object> updates = new HashMap<>();
         updates.put("status", status);
+        String uid = getCurrentUserId();
 
-        if (STATUS_CONFIRMED.equals(status)) {
-            updates.put("confirmedAt", FieldValue.serverTimestamp());
-        } else if (STATUS_REJECTED.equals(status)) {
+        if (STATUS_REJECTED.equals(status)) {
             updates.put("rejectedAt", FieldValue.serverTimestamp());
+            updates.put("rejectedBy", uid == null ? "unknown" : uid);
         } else if (STATUS_RESOLVED.equals(status)) {
             updates.put("resolvedAt", FieldValue.serverTimestamp());
-            String uid = getCurrentUserId();
             updates.put("resolvedBy", uid == null ? "unknown" : uid);
         }
 
         firestore.collection(EMERGENCIES_COLLECTION)
                 .document(emergencyId)
                 .update(updates)
+                .addOnSuccessListener(unused -> callback.onSuccess(null))
+                .addOnFailureListener(callback::onError);
+    }
+
+    private void claimEmergency(String emergencyId, ValueCallback<Void> callback) {
+        String uid = getCurrentUserId();
+        if (uid == null) {
+            callback.onError(new IllegalStateException("Admin is not signed in"));
+            return;
+        }
+
+        DocumentReference emergencyRef = firestore.collection(EMERGENCIES_COLLECTION).document(emergencyId);
+        firestore.runTransaction(transaction -> {
+                    com.google.firebase.firestore.DocumentSnapshot snapshot = transaction.get(emergencyRef);
+                    if (!snapshot.exists()) {
+                        throw new IllegalStateException("Emergency no longer exists");
+                    }
+
+                    String currentStatus = snapshot.getString("status");
+                    String confirmedBy = snapshot.getString("confirmedBy");
+                    if (STATUS_CONFIRMED.equals(currentStatus) && uid.equals(confirmedBy)) {
+                        return null;
+                    }
+
+                    if (!STATUS_PENDING.equals(currentStatus)) {
+                        throw new IllegalStateException("This emergency has already been claimed or processed");
+                    }
+
+                    Map<String, Object> updates = new HashMap<>();
+                    updates.put("status", STATUS_CONFIRMED);
+                    updates.put("confirmedAt", FieldValue.serverTimestamp());
+                    updates.put("confirmedBy", uid);
+                    transaction.update(emergencyRef, updates);
+                    return null;
+                })
                 .addOnSuccessListener(unused -> callback.onSuccess(null))
                 .addOnFailureListener(callback::onError);
     }
@@ -362,5 +417,36 @@ public class AdminDashboardRepository {
             return ((Timestamp) timestampObj).toDate().getTime();
         }
         return 0;
+    }
+
+    private boolean isHandledByCurrentAdmin(QueryDocumentSnapshot document, String adminId) {
+        return adminId != null && (adminId.equals(document.getString("confirmedBy"))
+                || adminId.equals(document.getString("resolvedBy")));
+    }
+
+    private boolean shouldShowEmergencyToAdmin(QueryDocumentSnapshot document, String adminId) {
+        String status = document.getString("status");
+        return STATUS_PENDING.equals(status)
+                || ((STATUS_CONFIRMED.equals(status) || STATUS_RESOLVED.equals(status))
+                && isHandledByCurrentAdmin(document, adminId));
+    }
+
+    private long getAdminStatusTimestamp(QueryDocumentSnapshot document, String status) {
+        if (STATUS_CONFIRMED.equals(status)) {
+            long confirmedAt = getTimestampMillis(document.get("confirmedAt"));
+            return confirmedAt > 0 ? confirmedAt : getTimestampMillis(document);
+        }
+
+        long resolvedAt = getTimestampMillis(document.get("resolvedAt"));
+        return resolvedAt > 0 ? resolvedAt : getTimestampMillis(document);
+    }
+
+    private long startOfTodayMillis() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        return calendar.getTimeInMillis();
     }
 }

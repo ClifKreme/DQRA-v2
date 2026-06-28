@@ -28,6 +28,7 @@ import android.os.VibratorManager;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewOutlineProvider;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
 import android.widget.Button;
@@ -99,6 +100,9 @@ public class AdminDashboard extends BaseActivity {
     private static final int PERMISSION_STEP_NOTIFICATION_LISTENER = 4;
     private static final int PERMISSION_STEP_DONE = 5;
     private static final long EMERGENCY_ANIMATION_DURATION_MS = 260;
+    private static final long MIN_EMERGENCY_RENDER_INTERVAL_MS = 350;
+    private static final long MIN_STATS_REFRESH_INTERVAL_MS = 2000;
+    private static final long EMERGENCY_SWITCH_COOLDOWN_MS = 3000;
     private int permissionFlowStep = PERMISSION_STEP_DONE;
     private boolean permissionFlowActive = false;
     private boolean waitingForPermissionSettings = false;
@@ -107,7 +111,7 @@ public class AdminDashboard extends BaseActivity {
     private Button btnViewMap, btnLogout, btnStopSound, btnCallSender;
     private Button btnConfirm, btnReject, btnViewImage;
     private Button btnShareMessenger; // ✅ NEW
-    private TextView tvEmergencyAlert;
+    private TextView tvEmergencyAlert, tvEmergencyDetails;
     private TextView tvPendingCount, tvActiveCount, tvResolvedCount;
     private TextView tvStatusIcon, tvEmergencyTime, tvSenderName;
     private TextView tvEmergencyActionsHeader, tvInfoHeader;
@@ -132,6 +136,13 @@ public class AdminDashboard extends BaseActivity {
     // Dashboard state
     private String adminMunicipality = "";
     private String currentEmergencyId = "";
+    private String lastEmergencyRenderSignature = "";
+    private long lastEmergencyRenderAt = 0L;
+    private long lastStatsRefreshAt = 0L;
+    private final Handler emergencySwitchHandler = new Handler(Looper.getMainLooper());
+    private Runnable pendingEmergencySwitchRunnable;
+    private AdminEmergency queuedEmergency;
+    private boolean isProcessingQueuedEmergency = false;
 
     // Alert system
     private MediaPlayer mediaPlayer;
@@ -305,6 +316,7 @@ public class AdminDashboard extends BaseActivity {
     protected void onPause() {
         super.onPause();
 
+        cancelPendingEmergencySwitch();
         stopSoundMonitoring();
         stopEmergencyAlerts();
 
@@ -317,6 +329,7 @@ public class AdminDashboard extends BaseActivity {
 
     @Override
     protected void onDestroy() {
+        cancelPendingEmergencySwitch();
         stopSoundMonitoring();
         stopEmergencyAlerts();
 
@@ -418,9 +431,8 @@ public class AdminDashboard extends BaseActivity {
             String imageText = currentEmergencyHasImage ? "\n📷 Image Available" : "";
             String sourceText = isMessengerEmergency(currentEmergencyId) ? "\n📱 From Messenger" : "";
 
-            tvEmergencyAlert.setText(String.format(Locale.getDefault(),
-                    "%s\n\nStatus: %s%s%s",
-                    statusText, currentEmergencyStatus.toUpperCase(), imageText, sourceText));
+            tvEmergencyAlert.setText(statusText);
+            updateEmergencyDetails(true);
 
             btnViewMap.setVisibility(View.VISIBLE);
             btnCallSender.setVisibility(View.VISIBLE);
@@ -879,6 +891,7 @@ public class AdminDashboard extends BaseActivity {
         switch (state.getStatus()) {
             case EMPTY:
                 Log.d(TAG, "No emergency documents found for municipality: " + adminMunicipality);
+                cancelPendingEmergencySwitch();
                 if (currentEmergencyId == null || !currentEmergencyId.startsWith("messenger_")) {
                     clearCurrentEmergency();
                 }
@@ -1008,10 +1021,12 @@ public class AdminDashboard extends BaseActivity {
         tvStatusIcon = findViewById(R.id.tvStatusIcon);
         tvEmergencyTime = findViewById(R.id.tvEmergencyTime);
         tvSenderName = findViewById(R.id.tvSenderName);
+        tvEmergencyDetails = findViewById(R.id.tvEmergencyDetails);
         tvEmergencyActionsHeader = findViewById(R.id.tvEmergencyActionsHeader);
         tvInfoHeader = findViewById(R.id.tvInfoHeader);
         tvAdminMunicipality = findViewById(R.id.tvAdminMunicipality);
         ivSenderProfile = findViewById(R.id.ivSenderProfile);
+        setupSenderProfileShape();
         cardEmergencyStatus = findViewById(R.id.cardEmergencyStatus);
 
         setupStatisticsClickListeners();
@@ -1169,6 +1184,8 @@ public class AdminDashboard extends BaseActivity {
     private void redirectToFilteredLogs(String statusFilter) {
         Intent intent = new Intent(this, EmergencyLogsAdapter.class);
         intent.putExtra("STATUS_FILTER", statusFilter);
+        intent.putExtra("ONLY_CURRENT_ADMIN",
+                STATUS_CONFIRMED.equals(statusFilter) || STATUS_RESOLVED.equals(statusFilter));
         startActivity(intent);
     }
 
@@ -1262,6 +1279,12 @@ public class AdminDashboard extends BaseActivity {
             return;
         }
 
+        long now = System.currentTimeMillis();
+        if (now - lastStatsRefreshAt < MIN_STATS_REFRESH_INTERVAL_MS) {
+            Log.d(TAG, "Skipping stats refresh during emergency burst");
+            return;
+        }
+        lastStatsRefreshAt = now;
         viewModel.refreshStats();
     }
 
@@ -1480,6 +1503,9 @@ public class AdminDashboard extends BaseActivity {
             resetEmergencyAnimations();
 
             tvEmergencyAlert.setText("No active emergencies");
+            if (tvEmergencyDetails != null) {
+                tvEmergencyDetails.setText("");
+            }
             btnViewMap.setVisibility(View.GONE);
             btnCallSender.setVisibility(View.GONE);
             btnConfirm.setVisibility(View.GONE);
@@ -1496,6 +1522,13 @@ public class AdminDashboard extends BaseActivity {
     }
 
     private void updateSenderProfileImage() {
+        if (tvSenderName != null) {
+            tvSenderName.setText(String.format(Locale.getDefault(),
+                    "Reported By: %s",
+                    firstNonEmpty(Reported, "Unknown")));
+            tvSenderName.setVisibility(View.VISIBLE);
+        }
+
         if (ivSenderProfile == null) {
             return;
         }
@@ -1511,6 +1544,20 @@ public class AdminDashboard extends BaseActivity {
         resetSenderProfileImage();
     }
 
+    private void setupSenderProfileShape() {
+        if (ivSenderProfile == null) {
+            return;
+        }
+
+        ivSenderProfile.setClipToOutline(true);
+        ivSenderProfile.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setOval(0, 0, view.getWidth(), view.getHeight());
+            }
+        });
+    }
+
     private void resetSenderProfileImage() {
         if (ivSenderProfile == null) {
             return;
@@ -1520,16 +1567,66 @@ public class AdminDashboard extends BaseActivity {
         ivSenderProfile.setVisibility(View.VISIBLE);
     }
 
+    private void updateEmergencyDetails(boolean includeStatus) {
+        if (tvEmergencyDetails == null) {
+            return;
+        }
+
+        String imageText = currentEmergencyHasImage ? "\nImage Available" : "";
+        String sourceText = currentEmergencyId != null && currentEmergencyId.startsWith("messenger_")
+                ? "\nFrom Messenger" : "";
+
+        if (includeStatus) {
+            tvEmergencyDetails.setText(String.format(Locale.getDefault(),
+                    "Contact: %s\nMunicipality: %s\nStatus: %s%s%s",
+                    firstNonEmpty(Phone, "No contact number"),
+                    firstNonEmpty(emergencyMunicipality, "Unknown"),
+                    firstNonEmpty(currentEmergencyStatus, STATUS_PENDING).toUpperCase(),
+                    imageText,
+                    sourceText));
+            return;
+        }
+
+        tvEmergencyDetails.setText(String.format(Locale.getDefault(),
+                "Contact: %s\nMunicipality: %s%s%s",
+                firstNonEmpty(Phone, "No contact number"),
+                firstNonEmpty(emergencyMunicipality, "Unknown"),
+                imageText,
+                sourceText));
+    }
+
     private void processEmergency(AdminEmergency emergency) {
         if (emergency == null) {
             return;
         }
 
         try {
+            if (isFinishing() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) {
+                return;
+            }
+
             String emergencyId = emergency.getId();
             String municipality = emergency.getMunicipality();
+            if (emergencyId == null || emergencyId.trim().isEmpty()) {
+                return;
+            }
 
             if (municipality != null && municipality.equals(adminMunicipality)) {
+                if (shouldDelayEmergencySwitch(emergencyId)) {
+                    queueEmergencySwitch(emergency);
+                    return;
+                }
+
+                String renderSignature = buildEmergencyRenderSignature(emergency);
+                long now = System.currentTimeMillis();
+                if (renderSignature.equals(lastEmergencyRenderSignature)
+                        && now - lastEmergencyRenderAt < MIN_EMERGENCY_RENDER_INTERVAL_MS) {
+                    Log.d(TAG, "Skipping duplicate emergency render: " + emergencyId);
+                    return;
+                }
+                lastEmergencyRenderSignature = renderSignature;
+                lastEmergencyRenderAt = now;
+
                 boolean isNewEmergency = !emergencyId.equals(currentEmergencyId);
 
                 currentEmergencyId = emergencyId;
@@ -1567,6 +1664,69 @@ public class AdminDashboard extends BaseActivity {
         }
     }
 
+    private boolean shouldDelayEmergencySwitch(String emergencyId) {
+        return !isProcessingQueuedEmergency
+                && currentEmergencyId != null
+                && !currentEmergencyId.trim().isEmpty()
+                && emergencyId != null
+                && !emergencyId.equals(currentEmergencyId);
+    }
+
+    private void queueEmergencySwitch(AdminEmergency emergency) {
+        queuedEmergency = emergency;
+        if (pendingEmergencySwitchRunnable != null) {
+            emergencySwitchHandler.removeCallbacks(pendingEmergencySwitchRunnable);
+        }
+
+        runOnUiThread(() -> {
+            if (tvEmergencyAlert != null) {
+                tvEmergencyAlert.setText("Loading next emergency...");
+            }
+        });
+
+        pendingEmergencySwitchRunnable = () -> {
+            AdminEmergency nextEmergency = queuedEmergency;
+            queuedEmergency = null;
+            pendingEmergencySwitchRunnable = null;
+
+            if (nextEmergency == null
+                    || isFinishing()
+                    || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1 && isDestroyed())) {
+                return;
+            }
+
+            isProcessingQueuedEmergency = true;
+            try {
+                processEmergency(nextEmergency);
+            } finally {
+                isProcessingQueuedEmergency = false;
+            }
+        };
+
+        emergencySwitchHandler.postDelayed(pendingEmergencySwitchRunnable, EMERGENCY_SWITCH_COOLDOWN_MS);
+        Log.d(TAG, "Queued emergency switch for cooldown");
+    }
+
+    private void cancelPendingEmergencySwitch() {
+        if (pendingEmergencySwitchRunnable != null) {
+            emergencySwitchHandler.removeCallbacks(pendingEmergencySwitchRunnable);
+            pendingEmergencySwitchRunnable = null;
+        }
+        queuedEmergency = null;
+    }
+
+    private String buildEmergencyRenderSignature(AdminEmergency emergency) {
+        String profileImage = emergency.getReportedByProfileImageBase64();
+        String imageBase64 = emergency.getImageBase64();
+        return firstNonEmpty(emergency.getId(), "") + "|"
+                + firstNonEmpty(emergency.getStatus(), STATUS_PENDING) + "|"
+                + firstNonEmpty(emergency.getPhoneNumber(), "") + "|"
+                + firstNonEmpty(emergency.getReportedBy(), "") + "|"
+                + emergency.hasImage() + "|"
+                + (profileImage == null ? 0 : profileImage.hashCode()) + "|"
+                + (imageBase64 == null ? 0 : imageBase64.hashCode());
+    }
+
     private void updateAdminLocation() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this,
@@ -1589,10 +1749,8 @@ public class AdminDashboard extends BaseActivity {
             String imageText = currentEmergencyHasImage ? "\n📷 Image Available" : "";
             String sourceText = currentEmergencyId.startsWith("messenger_") ? "\n📱 From Messenger" : "";
 
-            tvEmergencyAlert.setText(String.format(Locale.getDefault(),
-                    "%s\n\n" +
-                            "Municipality: %s%s%s",
-                    statusText, emergencyMunicipality, imageText, sourceText));
+            tvEmergencyAlert.setText(statusText);
+            updateEmergencyDetails(false);
 
             btnViewMap.setVisibility(View.VISIBLE);
             btnCallSender.setVisibility(View.VISIBLE);
@@ -1646,6 +1804,8 @@ public class AdminDashboard extends BaseActivity {
             btnViewMap.setVisibility(View.VISIBLE);
             btnCallSender.setVisibility(View.VISIBLE);
             btnShareMessenger.setVisibility(View.VISIBLE); // ✅ NEW
+            tvEmergencyAlert.setText("NEW EMERGENCY ALERT!");
+            updateEmergencyDetails(false);
             btnConfirm.setVisibility(View.VISIBLE);
             btnReject.setVisibility(View.VISIBLE);
             btnStopSound.setVisibility(View.VISIBLE);
@@ -1903,10 +2063,8 @@ public class AdminDashboard extends BaseActivity {
                             updateSenderProfileImage();
 
                             String statusText = getStatusDisplayText(currentEmergencyStatus);
-                            String imageText = currentEmergencyHasImage ? "\nImage Available" : "";
-                            tvEmergencyAlert.setText(String.format(Locale.getDefault(),
-                                    "%s%s",
-                                    statusText, imageText));
+                            tvEmergencyAlert.setText(statusText);
+                            updateEmergencyDetails(false);
                         });
 
                         saveCurrentEmergencyToPrefs();

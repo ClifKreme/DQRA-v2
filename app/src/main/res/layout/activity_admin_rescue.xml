@@ -300,11 +300,11 @@
 
                     <ImageView
                         android:id="@+id/ivSenderProfile"
-                        android:layout_width="42dp"
-                        android:layout_height="42dp"
-                        android:layout_marginEnd="10dp"
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:layout_marginEnd="12dp"
                         android:background="@drawable/avatar_ring"
-                        android:padding="4dp"
+                        android:padding="3dp"
                         android:scaleType="centerCrop"
                         android:src="@drawable/ic_profile_placeholder"/>
 
@@ -314,10 +314,21 @@
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
                         android:text=""
-                        android:textColor="@color/dash_text_secondary"
-                        android:textSize="12sp"
+                        android:textColor="#000000"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
                         android:lineSpacingMultiplier="1.2"/>
                 </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvEmergencyDetails"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text=""
+                    android:textColor="#000000"
+                    android:textSize="12sp"
+                    android:lineSpacingMultiplier="1.25"/>
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 

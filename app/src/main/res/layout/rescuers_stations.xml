@@ -15,7 +15,6 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <!-- Station Info Header -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -23,17 +22,16 @@
             android:gravity="center_vertical"
             android:layout_marginBottom="20dp">
 
-            <!-- Icon -->
-            <TextView
-                android:layout_width="68dp"
-                android:layout_height="68dp"
-                android:text="🚨"
-                android:textSize="42sp"
-                android:gravity="center"
-                android:background="@drawable/textview_box"
-                android:backgroundTint="#FFEBEE"/>
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/imgStationProfile"
+                android:layout_width="76dp"
+                android:layout_height="76dp"
+                android:scaleType="centerCrop"
+                android:src="@drawable/ic_profile_placeholder"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.DQRA.CircleImage"
+                app:strokeColor="#FFA726"
+                app:strokeWidth="3dp"/>
 
-            <!-- Station Details -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -74,25 +72,22 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Divider -->
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="#E0E0E0"
             android:layout_marginBottom="16dp"/>
 
-        <!-- Action Buttons -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- Emergency Alert Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAction"
                 android:layout_width="match_parent"
                 android:layout_height="76dp"
-                android:text="🚨 SEND EMERGENCY ALERT"
+                android:text="SEND EMERGENCY ALERT"
                 android:textSize="19sp"
                 android:textStyle="bold"
                 android:backgroundTint="#D32F2F"
@@ -100,12 +95,11 @@
                 app:cornerRadius="16dp"
                 android:layout_marginBottom="14dp"/>
 
-            <!-- Share Location Button -->
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMessenger"
                 android:layout_width="match_parent"
                 android:layout_height="64dp"
-                android:text="📱 SHARE LOCATION"
+                android:text="SHARE LOCATION"
                 android:textSize="17sp"
                 android:backgroundTint="#0084FF"
                 android:textColor="@android:color/white"

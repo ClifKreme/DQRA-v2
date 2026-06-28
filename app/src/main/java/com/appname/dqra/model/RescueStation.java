@@ -9,6 +9,7 @@ public class RescueStation {
     private String phoneNumber;
     private String phoneNumber2;   // ← NEW: second phone number
     private String messengerLink;
+    private String profileImageBase64;
     private double latitude;
     private double longitude;
 
@@ -45,6 +46,9 @@ public class RescueStation {
 
     public String getMessengerLink() { return messengerLink; }
     public void setMessengerLink(String messengerLink) { this.messengerLink = messengerLink; }
+
+    public String getProfileImageBase64() { return profileImageBase64; }
+    public void setProfileImageBase64(String profileImageBase64) { this.profileImageBase64 = profileImageBase64; }
 
     public double getLatitude() { return latitude; }
     public void setLatitude(double latitude) { this.latitude = latitude; }

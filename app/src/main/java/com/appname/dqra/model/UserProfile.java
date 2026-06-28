@@ -9,9 +9,21 @@ public class UserProfile {
     private final String address;
     private final String role;
     private final String profileImageBase64;
+    private final long profileLastUpdatedAt;
+    private final long photoLastUpdatedAt;
 
     public UserProfile(String id, String fullName, String email, String phone, String address, String role,
                        String profileImageBase64) {
+        this(id, fullName, email, phone, address, role, profileImageBase64, 0L, 0L);
+    }
+
+    public UserProfile(String id, String fullName, String email, String phone, String address, String role,
+                       String profileImageBase64, long profileLastUpdatedAt) {
+        this(id, fullName, email, phone, address, role, profileImageBase64, profileLastUpdatedAt, 0L);
+    }
+
+    public UserProfile(String id, String fullName, String email, String phone, String address, String role,
+                       String profileImageBase64, long profileLastUpdatedAt, long photoLastUpdatedAt) {
         this.id = id;
         this.fullName = fullName;
         this.email = email;
@@ -19,6 +31,8 @@ public class UserProfile {
         this.address = address;
         this.role = role;
         this.profileImageBase64 = profileImageBase64;
+        this.profileLastUpdatedAt = profileLastUpdatedAt;
+        this.photoLastUpdatedAt = photoLastUpdatedAt;
     }
 
     public String getId() {
@@ -47,6 +61,16 @@ public class UserProfile {
 
     public String getProfileImageBase64() {
         return profileImageBase64;
+    }
+
+    /** Epoch-millis timestamp of the last profile text update, or 0 if never updated. */
+    public long getProfileLastUpdatedAt() {
+        return profileLastUpdatedAt;
+    }
+
+    /** Epoch-millis timestamp of the last profile photo change, or 0 if never changed. */
+    public long getPhotoLastUpdatedAt() {
+        return photoLastUpdatedAt;
     }
 
     public boolean isComplete() {

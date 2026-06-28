@@ -55,12 +55,16 @@ public class AdminProfileRepository {
                         return;
                     }
 
+                    Long lastUpdated = document.getLong("profileLastUpdatedAt");
+                    Long photoUpdated = document.getLong("photoLastUpdatedAt");
                     AdminProfile profile = new AdminProfile(
                             document.getString("stationName"),
                             document.getString("municipality"),
                             document.getString("stationPhone"),
                             document.getString("email"),
-                            document.getString("profileImageBase64"));
+                            document.getString("profileImageBase64"),
+                            lastUpdated != null ? lastUpdated : 0L,
+                            photoUpdated != null ? photoUpdated : 0L);
                     AppCache.getInstance().putAdminProfile(userId, profile);
                     AppCache.getInstance().putAdminMunicipality(userId, profile.getMunicipality());
                     callback.onSuccess(profile);
@@ -84,15 +88,18 @@ public class AdminProfileRepository {
         updates.put("stationName", stationName);
         updates.put("municipality", municipality);
         updates.put("stationPhone", stationPhone);
+        updates.put("profileLastUpdatedAt", System.currentTimeMillis());
 
         firestore.collection(ADMINS_COLLECTION).document(userId)
                 .update(updates)
                 .addOnSuccessListener(unused -> {
+                    long now = System.currentTimeMillis();
                     AdminProfile cachedProfile = AppCache.getInstance().getAdminProfile(userId);
                     String email = cachedProfile == null ? null : cachedProfile.getEmail();
                     String profileImage = cachedProfile == null ? null : cachedProfile.getProfileImageBase64();
+                    long photoTs = cachedProfile == null ? 0L : cachedProfile.getPhotoLastUpdatedAt();
                     AdminProfile profile = new AdminProfile(stationName, municipality,
-                            stationPhone, email, profileImage);
+                            stationPhone, email, profileImage, now, photoTs);
                     AppCache.getInstance().putAdminProfile(userId, profile);
                     AppCache.getInstance().putAdminMunicipality(userId, municipality);
                     callback.onSuccess(null);
@@ -109,10 +116,12 @@ public class AdminProfileRepository {
 
         Map<String, Object> updates = new HashMap<>();
         updates.put("profileImageBase64", profileImageBase64);
+        updates.put("photoLastUpdatedAt", System.currentTimeMillis());
 
         firestore.collection(ADMINS_COLLECTION).document(userId)
                 .update(updates)
                 .addOnSuccessListener(unused -> {
+                    long now = System.currentTimeMillis();
                     AdminProfile cachedProfile = AppCache.getInstance().getAdminProfile(userId);
                     if (cachedProfile != null) {
                         AppCache.getInstance().putAdminProfile(userId,
@@ -121,7 +130,9 @@ public class AdminProfileRepository {
                                         cachedProfile.getMunicipality(),
                                         cachedProfile.getStationPhone(),
                                         cachedProfile.getEmail(),
-                                        profileImageBase64));
+                                        profileImageBase64,
+                                        cachedProfile.getProfileLastUpdatedAt(),
+                                        now));
                     }
                     callback.onSuccess(null);
                 })

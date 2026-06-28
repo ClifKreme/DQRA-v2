@@ -194,6 +194,7 @@ public class AppCache {
             put(object, "phoneNumber", station.getPhoneNumber());
             put(object, "phoneNumber2", station.getPhoneNumber2());
             put(object, "messengerLink", station.getMessengerLink());
+            put(object, "profileImageBase64", station.getProfileImageBase64());
             put(object, "latitude", station.getLatitude());
             put(object, "longitude", station.getLongitude());
             array.put(object);
@@ -216,6 +217,7 @@ public class AppCache {
             station.setPhoneNumber(nullableString(object, "phoneNumber"));
             station.setPhoneNumber2(nullableString(object, "phoneNumber2"));
             station.setMessengerLink(nullableString(object, "messengerLink"));
+            station.setProfileImageBase64(nullableString(object, "profileImageBase64"));
             station.setLatitude(object.optDouble("latitude", 0));
             station.setLongitude(object.optDouble("longitude", 0));
             stations.add(station);

@@ -27,6 +27,7 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
 
     // Status filter
     private String statusFilter = null; // null = show all
+    private boolean onlyCurrentAdmin = false;
     private TextView tvLogsTitle; // Title to show what's being displayed
 
     @Override
@@ -38,6 +39,7 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
         Intent intent = getIntent();
         if (intent != null && intent.hasExtra("STATUS_FILTER")) {
             statusFilter = intent.getStringExtra("STATUS_FILTER");
+            onlyCurrentAdmin = intent.getBooleanExtra("ONLY_CURRENT_ADMIN", false);
         }
 
         // Initialize title TextView
@@ -84,6 +86,11 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
                     title = "📋 All Emergency Logs";
                     break;
             }
+            if (onlyCurrentAdmin && "confirmed".equals(statusFilter)) {
+                title = "My Active Emergencies Today";
+            } else if (onlyCurrentAdmin && "resolved".equals(statusFilter)) {
+                title = "My Resolved Emergencies Today";
+            }
             tvLogsTitle.setText(title);
         }
     }
@@ -115,7 +122,7 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
         Log.d("AdminActivity", "Fetching reports for Municipality: " + municipality +
                 ", Filter: " + (statusFilter != null ? statusFilter : "all"));
 
-        emergencyRepository.fetchEmergencyLogs(municipality, statusFilter,
+        emergencyRepository.fetchEmergencyLogs(municipality, statusFilter, onlyCurrentAdmin,
                 new EmergencyRepository.Callback<List<EmergencyLocation>>() {
                     @Override
                     public void onSuccess(List<EmergencyLocation> emergencies) {

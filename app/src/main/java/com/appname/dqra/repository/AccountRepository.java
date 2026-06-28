@@ -232,6 +232,27 @@ public class AccountRepository {
                 });
     }
 
+    public void loadCurrentUserProfileFresh(Callback<UserProfile> callback) {
+        String userId = getCurrentUserId();
+        if (userId == null) {
+            callback.onError(new IllegalStateException("User is not signed in"));
+            return;
+        }
+
+        firestore.collection(USERS_COLLECTION).document(userId).get()
+                .addOnSuccessListener(documentSnapshot -> {
+                    if (!documentSnapshot.exists()) {
+                        callback.onError(new IllegalStateException("User data not found"));
+                        return;
+                    }
+
+                    UserProfile profile = profileFromDocument(documentSnapshot);
+                    AppCache.getInstance().putUserProfile(userId, profile);
+                    callback.onSuccess(profile);
+                })
+                .addOnFailureListener(callback::onError);
+    }
+
     public void updateCurrentUserProfile(String fullName, String phone, String address,
                                          Callback<Void> callback) {
         String userId = getCurrentUserId();
@@ -244,16 +265,19 @@ public class AccountRepository {
         updates.put("fullName", fullName);
         updates.put("phone", phone);
         updates.put("address", address);
+        updates.put("profileLastUpdatedAt", System.currentTimeMillis());
 
         firestore.collection(USERS_COLLECTION).document(userId)
                 .update(updates)
                 .addOnSuccessListener(unused -> {
+                    long now = System.currentTimeMillis();
                     UserProfile cachedProfile = AppCache.getInstance().getUserProfile(userId);
                     String email = cachedProfile == null ? null : cachedProfile.getEmail();
                     String role = cachedProfile == null ? null : cachedProfile.getRole();
                     String profileImage = cachedProfile == null ? null : cachedProfile.getProfileImageBase64();
+                    long photoTs = cachedProfile == null ? 0L : cachedProfile.getPhotoLastUpdatedAt();
                     AppCache.getInstance().putUserProfile(userId,
-                            new UserProfile(userId, fullName, email, phone, address, role, profileImage));
+                            new UserProfile(userId, fullName, email, phone, address, role, profileImage, now, photoTs));
                     callback.onSuccess(null);
                 })
                 .addOnFailureListener(callback::onError);
@@ -268,10 +292,12 @@ public class AccountRepository {
 
         Map<String, Object> updates = new HashMap<>();
         updates.put("profileImageBase64", profileImageBase64);
+        updates.put("photoLastUpdatedAt", System.currentTimeMillis());
 
         firestore.collection(USERS_COLLECTION).document(userId)
                 .update(updates)
                 .addOnSuccessListener(unused -> {
+                    long now = System.currentTimeMillis();
                     UserProfile cachedProfile = AppCache.getInstance().getUserProfile(userId);
                     if (cachedProfile != null) {
                         AppCache.getInstance().putUserProfile(userId,
@@ -282,7 +308,9 @@ public class AccountRepository {
                                         cachedProfile.getPhone(),
                                         cachedProfile.getAddress(),
                                         cachedProfile.getRole(),
-                                        profileImageBase64));
+                                        profileImageBase64,
+                                        cachedProfile.getProfileLastUpdatedAt(),
+                                        now));
                     }
                     callback.onSuccess(null);
                 })
@@ -319,6 +347,8 @@ public class AccountRepository {
     }
 
     private UserProfile profileFromDocument(DocumentSnapshot document) {
+        Long lastUpdated = document.getLong("profileLastUpdatedAt");
+        Long photoUpdated = document.getLong("photoLastUpdatedAt");
         return new UserProfile(
                 document.getId(),
                 document.getString("fullName"),
@@ -326,6 +356,8 @@ public class AccountRepository {
                 document.getString("phone"),
                 document.getString("address"),
                 document.getString("role"),
-                document.getString("profileImageBase64"));
+                document.getString("profileImageBase64"),
+                lastUpdated != null ? lastUpdated : 0L,
+                photoUpdated != null ? photoUpdated : 0L);
     }
 }

@@ -141,12 +141,14 @@ public class UserDashboardRepository {
         String phoneNumber = document.getString("stationPhone");
         String phoneNumber2 = document.getString("stationPhone2");
         String messengerLink = document.getString("messengerLink");
+        String profileImageBase64 = document.getString("profileImageBase64");
 
         RescueStation station = new RescueStation(name, municipality, phoneNumber);
         station.setStationName(name);
         station.setId(document.getId());
         station.setPhoneNumber2(phoneNumber2);
         station.setMessengerLink(messengerLink);
+        station.setProfileImageBase64(profileImageBase64);
 
         try {
             if (document.contains("latitude") && document.contains("longitude")) {

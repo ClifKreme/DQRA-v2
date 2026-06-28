@@ -11,6 +11,7 @@ import com.google.firebase.firestore.Query;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -38,10 +39,33 @@ public class EmergencyRepository {
         void onError(Exception exception);
     }
 
+    public static class CooldownState {
+        private final long remainingMs;
+        private final long cooldownMs;
+
+        public CooldownState(long remainingMs, long cooldownMs) {
+            this.remainingMs = remainingMs;
+            this.cooldownMs = cooldownMs;
+        }
+
+        public boolean isOnCooldown() {
+            return remainingMs > 0;
+        }
+
+        public long getRemainingMs() {
+            return remainingMs;
+        }
+
+        public long getCooldownMs() {
+            return cooldownMs;
+        }
+    }
+
     private static final String ADMINS_COLLECTION = "admins_with_stations";
     private static final String RESCUERS_COLLECTION = "rescuers";
     private static final String EMERGENCIES_COLLECTION = "emergency_locations";
     private static final String STATUS_RESOLVED = "resolved";
+    private static final String STATUS_COMPLETED = "completed";
 
     private final FirebaseAuth auth;
     private final FirebaseFirestore firestore;
@@ -160,12 +184,20 @@ public class EmergencyRepository {
 
     public void fetchEmergencyLogs(String municipality, String statusFilter,
                                    Callback<List<EmergencyLocation>> callback) {
+        fetchEmergencyLogs(municipality, statusFilter, false, callback);
+    }
+
+    public void fetchEmergencyLogs(String municipality, String statusFilter, boolean onlyCurrentAdminHandled,
+                                   Callback<List<EmergencyLocation>> callback) {
         List<EmergencyLocation> cachedLogs = AppCache.getInstance()
                 .getEmergencyLogs(municipality, statusFilter);
-        boolean hasCache = cachedLogs != null && !cachedLogs.isEmpty();
+        boolean hasCache = !onlyCurrentAdminHandled && cachedLogs != null && !cachedLogs.isEmpty();
         if (hasCache) {
             callback.onSuccess(cachedLogs);
         }
+
+        String currentAdminId = auth.getCurrentUser() == null ? null : auth.getCurrentUser().getUid();
+        long startOfToday = startOfTodayMillis();
 
         Query query = firestore.collection(EMERGENCIES_COLLECTION)
                 .whereEqualTo("municipality", municipality);
@@ -178,6 +210,11 @@ public class EmergencyRepository {
                 .addOnSuccessListener(snapshot -> {
                     List<EmergencyLocation> emergencies = new ArrayList<>();
                     for (QueryDocumentSnapshot document : snapshot) {
+                        if (onlyCurrentAdminHandled
+                                && (!isHandledByCurrentAdmin(document, currentAdminId)
+                                || getAdminStatusTimestamp(document, statusFilter) < startOfToday)) {
+                            continue;
+                        }
                         EmergencyLocation emergency = document.toObject(EmergencyLocation.class);
                         emergency.setId(document.getId());
                         emergencies.add(emergency);
@@ -185,7 +222,9 @@ public class EmergencyRepository {
 
                     Collections.sort(emergencies, (first, second) ->
                             Long.compare(second.getTimestamp(), first.getTimestamp()));
-                    AppCache.getInstance().putEmergencyLogs(municipality, statusFilter, emergencies);
+                    if (!onlyCurrentAdminHandled) {
+                        AppCache.getInstance().putEmergencyLogs(municipality, statusFilter, emergencies);
+                    }
                     callback.onSuccess(emergencies);
                 })
                 .addOnFailureListener(exception -> {
@@ -201,6 +240,61 @@ public class EmergencyRepository {
                 .whereEqualTo("status", "pending")
                 .get()
                 .addOnSuccessListener(snapshot -> callback.onSuccess(!snapshot.isEmpty()))
+                .addOnFailureListener(callback::onError);
+    }
+
+    public void hasActiveEmergencyForUser(String userId, Callback<Boolean> callback) {
+        firestore.collection(EMERGENCIES_COLLECTION)
+                .whereEqualTo("reportedByUid", userId)
+                .get()
+                .addOnSuccessListener(snapshot -> {
+                    boolean hasActiveEmergency = false;
+                    for (QueryDocumentSnapshot document : snapshot) {
+                        String status = document.getString("status");
+                        if ("pending".equals(status) || "confirmed".equals(status)) {
+                            hasActiveEmergency = true;
+                            break;
+                        }
+                    }
+                    callback.onSuccess(hasActiveEmergency);
+                })
+                .addOnFailureListener(callback::onError);
+    }
+
+    public void getResolvedEmergencyCooldown(String userId, long baseCooldownMs,
+                                             long maxCooldownMs,
+                                             Callback<CooldownState> callback) {
+        firestore.collection(EMERGENCIES_COLLECTION)
+                .whereEqualTo("reportedByUid", userId)
+                .get()
+                .addOnSuccessListener(snapshot -> {
+                    int resolvedCount = 0;
+                    long latestResolvedAt = 0L;
+
+                    for (QueryDocumentSnapshot document : snapshot) {
+                        String status = document.getString("status");
+                        if (!STATUS_RESOLVED.equals(status) && !STATUS_COMPLETED.equals(status)) {
+                            continue;
+                        }
+
+                        resolvedCount++;
+                        long resolvedAt = getStatusResolvedTimestamp(document);
+                        if (resolvedAt > latestResolvedAt) {
+                            latestResolvedAt = resolvedAt;
+                        }
+                    }
+
+                    if (resolvedCount == 0 || latestResolvedAt <= 0) {
+                        callback.onSuccess(new CooldownState(0L, 0L));
+                        return;
+                    }
+
+                    long multiplier = 1L << Math.min(resolvedCount - 1, 10);
+                    long cooldownMs = Math.min(baseCooldownMs * multiplier, maxCooldownMs);
+                    long remainingMs = Math.max(0L,
+                            latestResolvedAt + cooldownMs - System.currentTimeMillis());
+                    callback.onSuccess(new CooldownState(remainingMs, cooldownMs));
+                })
                 .addOnFailureListener(callback::onError);
     }
 
@@ -271,9 +365,15 @@ public class EmergencyRepository {
     }
 
     public void cancelEmergency(String emergencyId, Callback<Void> callback) {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("status", "cancelled");
+        updates.put("cancelledAt", System.currentTimeMillis());
+        updates.put("cancelledBy", auth.getCurrentUser() != null
+                ? auth.getCurrentUser().getUid() : "unknown");
+
         firestore.collection(EMERGENCIES_COLLECTION)
                 .document(emergencyId)
-                .delete()
+                .update(updates)
                 .addOnSuccessListener(unused -> callback.onSuccess(null))
                 .addOnFailureListener(callback::onError);
     }
@@ -356,5 +456,44 @@ public class EmergencyRepository {
             return ((com.google.firebase.Timestamp) timestamp).toDate().getTime();
         }
         return 0;
+    }
+
+    private long getStatusResolvedTimestamp(DocumentSnapshot document) {
+        long resolvedAt = getTimestampMillisValue(document.get("resolvedAt"));
+        return resolvedAt > 0 ? resolvedAt : getTimestampMillis(document);
+    }
+
+    private boolean isHandledByCurrentAdmin(DocumentSnapshot document, String adminId) {
+        return adminId != null && (adminId.equals(document.getString("confirmedBy"))
+                || adminId.equals(document.getString("resolvedBy")));
+    }
+
+    private long getAdminStatusTimestamp(DocumentSnapshot document, String status) {
+        if ("confirmed".equals(status)) {
+            long confirmedAt = getTimestampMillisValue(document.get("confirmedAt"));
+            return confirmedAt > 0 ? confirmedAt : getTimestampMillis(document);
+        }
+
+        long resolvedAt = getTimestampMillisValue(document.get("resolvedAt"));
+        return resolvedAt > 0 ? resolvedAt : getTimestampMillis(document);
+    }
+
+    private long getTimestampMillisValue(Object timestamp) {
+        if (timestamp instanceof Number) {
+            return ((Number) timestamp).longValue();
+        }
+        if (timestamp instanceof com.google.firebase.Timestamp) {
+            return ((com.google.firebase.Timestamp) timestamp).toDate().getTime();
+        }
+        return 0;
+    }
+
+    private long startOfTodayMillis() {
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        return calendar.getTimeInMillis();
     }
 }

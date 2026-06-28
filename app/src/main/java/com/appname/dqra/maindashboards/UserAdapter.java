@@ -26,8 +26,10 @@ import android.util.Base64;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewOutlineProvider;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -36,6 +38,7 @@ import androidx.core.app.ActivityCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.appname.dqra.R;
+import com.appname.dqra.image.Base64ImageHelper;
 import com.appname.dqra.model.RescueStation;
 import com.appname.dqra.model.UserProfile;
 import com.appname.dqra.repository.AccountRepository;
@@ -70,6 +73,15 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
     private Runnable refreshRunnable;
     private static final long REFRESH_INTERVAL = 500;
     private boolean isRefreshing = false;
+
+    // Spam prevention — cooldown between emergency submissions
+    private static final long CANCEL_COOLDOWN_BASE_MS = 2 * 60 * 1000L;
+    private static final long CANCEL_COOLDOWN_MAX_MS = 30 * 60 * 1000L;
+    private static final long RESOLVED_COOLDOWN_BASE_MS = 3 * 60 * 1000L;
+    private static final long RESOLVED_COOLDOWN_MAX_MS = 60 * 60 * 1000L;
+    private long cancelCooldownUntil = 0L;
+    private int consecutiveCancels = 0;
+    private boolean emergencyInFlight = false;
 
     public UserAdapter(Context context, List<RescueStation> rescueStationList) {
         this.context = context;
@@ -129,6 +141,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
         String displayName = station.getStationName() != null
                 ? station.getStationName() : station.getName();
         holder.tvStationName.setText(displayName);
+        bindStationProfileImage(holder.imgStationProfile, station.getProfileImageBase64());
 
         // Municipality + distance
         if (userLatitude != 0 && userLongitude != 0
@@ -151,6 +164,10 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
         } else {
             holder.tvPhoneNumber.setText(phone1);
         }
+        holder.tvPhoneNumber.setPaintFlags(holder.tvPhoneNumber.getPaintFlags()
+                | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        holder.tvPhoneNumber.setClickable(true);
+        holder.tvPhoneNumber.setOnClickListener(v -> showCallOptionsDialog(station));
 
         // ── Messenger button ───────────────────────────────────────────────────
         holder.btnMessenger.setOnClickListener(v -> {
@@ -188,11 +205,13 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
         public TextView tvStationName;
         public TextView tvMunicipality;
         public TextView tvPhoneNumber;
+        public ImageView imgStationProfile;
         public Button   btnAction;
         public Button   btnMessenger;
 
         public ViewHolder(@NonNull View itemView) {
             super(itemView);
+            imgStationProfile = itemView.findViewById(R.id.imgStationProfile);
             tvStationName  = itemView.findViewById(R.id.stationName);
             tvMunicipality = itemView.findViewById(R.id.tvMunicipality);
             tvPhoneNumber  = itemView.findViewById(R.id.stationPhone);
@@ -202,6 +221,28 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
     }
 
     // ─── Distance helper ──────────────────────────────────────────────────────
+
+    private void bindStationProfileImage(ImageView imageView, String profileImageBase64) {
+        if (imageView == null) {
+            return;
+        }
+
+        imageView.setClipToOutline(true);
+        imageView.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setOval(0, 0, view.getWidth(), view.getHeight());
+            }
+        });
+
+        if (profileImageBase64 != null
+                && !profileImageBase64.trim().isEmpty()
+                && Base64ImageHelper.loadBase64IntoImageView(imageView, profileImageBase64)) {
+            return;
+        }
+
+        imageView.setImageResource(R.drawable.ic_profile_placeholder);
+    }
 
     private double calculateDistance(double userLat, double userLon,
                                      double stationLat, double stationLon) {
@@ -235,6 +276,12 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
     private void showCallOptionsDialog(RescueStation station) {
         String phone1 = station.getPhoneNumber();
         String phone2 = station.getPhoneNumber2();
+
+        if ((phone1 == null || phone1.trim().isEmpty())
+                && (phone2 == null || phone2.trim().isEmpty())) {
+            Toast.makeText(context, "Phone number not available", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         boolean hasPhone2 = phone2 != null && !phone2.trim().isEmpty();
 
@@ -471,7 +518,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                 double lat = location.getLatitude();
                 double lon = location.getLongitude();
                 if (accountRepository.hasCurrentUser()) {
-                    accountRepository.loadCurrentUserProfile(new AccountRepository.Callback<UserProfile>() {
+                    accountRepository.loadCurrentUserProfileFresh(new AccountRepository.Callback<UserProfile>() {
                         @Override
                         public void onSuccess(UserProfile profile) {
                             notifyStationAndRescuers(adminId, municipality, lat, lon,
@@ -503,14 +550,45 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
             return;
         }
 
-        emergencyRepository.hasPendingEmergency(fullName, new EmergencyRepository.Callback<Boolean>() {
+        // Guard: block if a request is already being processed right now
+        if (emergencyInFlight) {
+            Toast.makeText(context, "Your emergency request is already being sent. Please wait.",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Guard: enforce cooldown between submissions
+        long now = System.currentTimeMillis();
+        if (cancelCooldownUntil > now) {
+            long secondsLeft = (cancelCooldownUntil - now + 999) / 1000;
+            new AlertDialog.Builder(context)
+                    .setTitle("⏳ Please Wait")
+                    .setMessage("You recently cancelled an emergency request.\n\n" +
+                            "You can send another in " + secondsLeft + " second" +
+                            (secondsLeft != 1 ? "s" : "") + ".\n\n" +
+                            "If this is a different emergency, please call the station directly.")
+                    .setPositiveButton("OK", null)
+                    .setNeutralButton("📞 Call Station", (d, w) -> {
+                        // Find the station for this admin and call
+                        for (RescueStation s : rescueStationList) {
+                            if (adminId.equals(s.getId())) {
+                                showCallOptionsDialog(s);
+                                return;
+                            }
+                        }
+                    })
+                    .show();
+            return;
+        }
+
+        emergencyRepository.hasActiveEmergencyForUser(uid, new EmergencyRepository.Callback<Boolean>() {
             @Override
-            public void onSuccess(Boolean hasPendingEmergency) {
-                if (hasPendingEmergency) {
-                    Toast.makeText(context, "You already have a pending emergency request!",
+            public void onSuccess(Boolean hasActiveEmergency) {
+                if (hasActiveEmergency) {
+                    Toast.makeText(context, "You already have an active emergency request!",
                             Toast.LENGTH_LONG).show();
                 } else {
-                    createEmergencyRequest(adminId, municipality, userLat, userLon,
+                    checkResolvedEmergencyCooldown(adminId, municipality, userLat, userLon,
                             fullName, phoneNumber, uid, profileImageBase64);
                 }
             }
@@ -538,6 +616,56 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                 .show();
     }
 
+    private void checkResolvedEmergencyCooldown(String adminId, String municipality,
+                                                double userLat, double userLon,
+                                                String fullName, String phoneNumber, String uid,
+                                                String profileImageBase64) {
+        emergencyRepository.getResolvedEmergencyCooldown(uid, RESOLVED_COOLDOWN_BASE_MS,
+                RESOLVED_COOLDOWN_MAX_MS, new EmergencyRepository.Callback<EmergencyRepository.CooldownState>() {
+                    @Override
+                    public void onSuccess(EmergencyRepository.CooldownState cooldownState) {
+                        if (cooldownState != null && cooldownState.isOnCooldown()) {
+                            showResolvedCooldownDialog(adminId, cooldownState);
+                            return;
+                        }
+
+                        createEmergencyRequest(adminId, municipality, userLat, userLon,
+                                fullName, phoneNumber, uid, profileImageBase64);
+                    }
+
+                    @Override
+                    public void onError(Exception exception) {
+                        Toast.makeText(context, "Error checking emergency cooldown: "
+                                + exception.getMessage(), Toast.LENGTH_SHORT).show();
+                    }
+                });
+    }
+
+    private void showResolvedCooldownDialog(String adminId,
+                                            EmergencyRepository.CooldownState cooldownState) {
+        long minutesLeft = getMinutesFromMs(cooldownState.getRemainingMs());
+        long cooldownMinutes = getMinutesFromMs(cooldownState.getCooldownMs());
+        new AlertDialog.Builder(context)
+                .setTitle("Please Wait")
+                .setMessage("Your last emergency was already resolved.\n\n" +
+                        "For safety and spam prevention, you need to wait " + minutesLeft +
+                        " minute" + (minutesLeft != 1 ? "s" : "") +
+                        " before sending another emergency.\n\n" +
+                        "Current cooldown: " + cooldownMinutes + " minute" +
+                        (cooldownMinutes != 1 ? "s" : "") + ".\n" +
+                        "The limit can increase up to 1 hour after repeated emergencies.")
+                .setPositiveButton("OK", null)
+                .setNeutralButton("Call Station", (d, w) -> {
+                    for (RescueStation station : rescueStationList) {
+                        if (adminId.equals(station.getId())) {
+                            showCallOptionsDialog(station);
+                            return;
+                        }
+                    }
+                })
+                .show();
+    }
+
     private void sendEmergencyToFirestore(String adminId, String municipality,
                                           double userLat, double userLon,
                                           String fullName, String phoneNumber, String uid,
@@ -549,29 +677,19 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
         loadingDialog.show();
         Button btnClose = loadingDialog.findViewById(R.id.btnCloseLoading);
 
+        emergencyInFlight = true;
+
         emergencyRepository.createEmergencyRequest(adminId, municipality, userLat, userLon,
                 fullName, phoneNumber, uid, profileImageBase64, new EmergencyRepository.Callback<String>() {
                 @Override
                 public void onSuccess(String emergencyDocId) {
+                    emergencyInFlight = false; // request reached Firestore — cooldown already stamped
                     currentEmergencyDocId = emergencyDocId;
                     final EmergencyRepository.ListenerHandle[] listener = new EmergencyRepository.ListenerHandle[1];
 
                     if (btnClose != null) {
                         btnClose.setOnClickListener(v -> {
-                            loadingDialog.dismiss();
-                            emergencyRepository.cancelEmergency(emergencyDocId, new EmergencyRepository.Callback<Void>() {
-                                @Override
-                                public void onSuccess(Void value) {
-                                    Toast.makeText(context, "Emergency request cancelled", Toast.LENGTH_SHORT).show();
-                                }
-
-                                @Override
-                                public void onError(Exception exception) {
-                                    Toast.makeText(context, "Failed to cancel request: " + exception.getMessage(),
-                                            Toast.LENGTH_SHORT).show();
-                                }
-                            });
-                            if (listener[0] != null) listener[0].remove();
+                            showCancelEmergencyConfirmation(loadingDialog, emergencyDocId, listener[0]);
                         });
                     }
 
@@ -625,6 +743,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
 
                 @Override
                 public void onError(Exception exception) {
+                    emergencyInFlight = false;
                     loadingDialog.dismiss();
                     Toast.makeText(context, "Failed to notify station: " + exception.getMessage(),
                             Toast.LENGTH_SHORT).show();
@@ -638,6 +757,61 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                 .setMessage(message)
                 .setPositiveButton("OK", null)
                 .show();
+    }
+
+    private void showCancelEmergencyConfirmation(AlertDialog loadingDialog,
+                                                 String emergencyDocId,
+                                                 EmergencyRepository.ListenerHandle listener) {
+        new AlertDialog.Builder(context)
+                .setTitle("Cancel emergency request?")
+                .setMessage("Are you sure you want to cancel this emergency request?\n\n" +
+                        "If you cancel, you must wait before sending another emergency. " +
+                        "Repeated cancellations will make the wait longer.")
+                .setPositiveButton("Yes, Cancel", (dialog, which) ->
+                        cancelEmergencyWithCooldown(loadingDialog, emergencyDocId, listener))
+                .setNegativeButton("Keep Waiting", null)
+                .show();
+    }
+
+    private void cancelEmergencyWithCooldown(AlertDialog loadingDialog,
+                                             String emergencyDocId,
+                                             EmergencyRepository.ListenerHandle listener) {
+        emergencyRepository.cancelEmergency(emergencyDocId, new EmergencyRepository.Callback<Void>() {
+            @Override
+            public void onSuccess(Void value) {
+                if (listener != null) {
+                    listener.remove();
+                }
+                loadingDialog.dismiss();
+                startCancelCooldown();
+                Toast.makeText(context,
+                        "Emergency request cancelled. Please wait " + getCooldownMinutes()
+                                + " minute(s) before sending another.",
+                        Toast.LENGTH_LONG).show();
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                Toast.makeText(context, "Failed to cancel request: " + exception.getMessage(),
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void startCancelCooldown() {
+        consecutiveCancels++;
+        long cooldown = CANCEL_COOLDOWN_BASE_MS * (1L << Math.min(consecutiveCancels - 1, 4));
+        cooldown = Math.min(cooldown, CANCEL_COOLDOWN_MAX_MS);
+        cancelCooldownUntil = System.currentTimeMillis() + cooldown;
+    }
+
+    private long getCooldownMinutes() {
+        long remaining = Math.max(0, cancelCooldownUntil - System.currentTimeMillis());
+        return Math.max(1, (remaining + 59_999L) / 60_000L);
+    }
+
+    private long getMinutesFromMs(long durationMs) {
+        return Math.max(1, (Math.max(0, durationMs) + 59_999L) / 60_000L);
     }
 
     private void showConfirmationWithImageOption(String emergencyDocId) {

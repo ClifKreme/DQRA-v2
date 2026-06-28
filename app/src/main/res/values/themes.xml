@@ -9,4 +9,9 @@
 
 
     <style name="Theme.DQRA" parent="Base.Theme.DQRA" />
+
+    <style name="ShapeAppearance.DQRA.CircleImage" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">50%</item>
+    </style>
 </resources>

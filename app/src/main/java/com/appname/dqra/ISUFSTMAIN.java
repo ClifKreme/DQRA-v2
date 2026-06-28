@@ -27,6 +27,7 @@ public class ISUFSTMAIN extends AppCompatActivity {
         // CardView acting as the Register Admin button
         CardView btnRegister = findViewById(R.id.btn1);
         CardView btnEmergencyContacts = findViewById(R.id.btnManageEmergencyContacts);
+        CardView btnViewAppFeedback = findViewById(R.id.btnViewAppFeedback);
         Button btnLogout = findViewById(R.id.btnLogout);
 
         btnRegister.setOnClickListener(v -> {
@@ -36,6 +37,11 @@ public class ISUFSTMAIN extends AppCompatActivity {
 
         btnEmergencyContacts.setOnClickListener(v -> {
             Intent intent = new Intent(ISUFSTMAIN.this, AddEmergencyContactActivity.class);
+            startActivity(intent);
+        });
+
+        btnViewAppFeedback.setOnClickListener(v -> {
+            Intent intent = new Intent(ISUFSTMAIN.this, AppFeedbackActivity.class);
             startActivity(intent);
         });
 

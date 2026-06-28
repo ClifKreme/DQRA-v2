@@ -7,7 +7,11 @@ import androidx.lifecycle.ViewModel;
 import com.appname.dqra.model.UserProfile;
 import com.appname.dqra.repository.AccountRepository;
 
+import java.util.concurrent.TimeUnit;
+
 public class ProfileViewModel extends ViewModel {
+
+    private static final long UPDATE_COOLDOWN_MS = TimeUnit.DAYS.toMillis(30);
 
     private final AccountRepository repository;
     private final MutableLiveData<UserProfile> profile = new MutableLiveData<>();
@@ -30,6 +34,39 @@ public class ProfileViewModel extends ViewModel {
         return state;
     }
 
+    /**
+     * Returns how many days remain in the cooldown, or 0 if the user can update now.
+     * Returns 0 also when the profile has never been updated before.
+     */
+    public long getDaysUntilNextUpdate() {
+        UserProfile current = profile.getValue();
+        if (current == null || current.getProfileLastUpdatedAt() == 0L) return 0;
+        long elapsed = System.currentTimeMillis() - current.getProfileLastUpdatedAt();
+        long remaining = UPDATE_COOLDOWN_MS - elapsed;
+        if (remaining <= 0) return 0;
+        return (long) Math.ceil(remaining / (double) TimeUnit.DAYS.toMillis(1));
+    }
+
+    public boolean canUpdateProfile() {
+        return getDaysUntilNextUpdate() == 0;
+    }
+
+    /**
+     * Returns how many days remain before the photo can be changed, or 0 if allowed now.
+     */
+    public long getDaysUntilNextPhotoUpdate() {
+        UserProfile current = profile.getValue();
+        if (current == null || current.getPhotoLastUpdatedAt() == 0L) return 0;
+        long elapsed = System.currentTimeMillis() - current.getPhotoLastUpdatedAt();
+        long remaining = UPDATE_COOLDOWN_MS - elapsed;
+        if (remaining <= 0) return 0;
+        return (long) Math.ceil(remaining / (double) TimeUnit.DAYS.toMillis(1));
+    }
+
+    public boolean canUpdatePhoto() {
+        return getDaysUntilNextPhotoUpdate() == 0;
+    }
+
     public void loadProfile() {
         state.setValue(OperationState.loading());
         repository.loadCurrentUserProfile(new AccountRepository.Callback<UserProfile>() {
@@ -47,6 +84,19 @@ public class ProfileViewModel extends ViewModel {
     }
 
     public void saveProfile(String fullName, String phone, String address) {
+        if (isOperationInProgress()) {
+            state.setValue(OperationState.error("Profile update already in progress."));
+            return;
+        }
+
+        if (!canUpdateProfile()) {
+            long daysLeft = getDaysUntilNextUpdate();
+            state.setValue(OperationState.error(
+                    "You can only update your profile once per month. "
+                    + "Please wait " + daysLeft + " more day(s)."));
+            return;
+        }
+
         state.setValue(OperationState.loading());
         repository.updateCurrentUserProfile(fullName, phone, address,
                 new AccountRepository.Callback<Void>() {
@@ -71,6 +121,19 @@ public class ProfileViewModel extends ViewModel {
     }
 
     public void saveProfileImage(String profileImageBase64) {
+        if (isOperationInProgress()) {
+            state.setValue(OperationState.error("Profile update already in progress."));
+            return;
+        }
+
+        if (!canUpdatePhoto()) {
+            long daysLeft = getDaysUntilNextPhotoUpdate();
+            state.setValue(OperationState.error(
+                    "You can only change your profile photo once per month. "
+                    + "Please wait " + daysLeft + " more day(s)."));
+            return;
+        }
+
         state.setValue(OperationState.loading());
         repository.updateCurrentUserProfileImage(profileImageBase64,
                 new AccountRepository.Callback<Void>() {
@@ -85,7 +148,9 @@ public class ProfileViewModel extends ViewModel {
                                     currentProfile.getPhone(),
                                     currentProfile.getAddress(),
                                     currentProfile.getRole(),
-                                    profileImageBase64));
+                                    profileImageBase64,
+                                    currentProfile.getProfileLastUpdatedAt(),
+                                    System.currentTimeMillis()));
                         }
                         state.setValue(OperationState.success("Profile photo updated"));
                     }
@@ -99,5 +164,10 @@ public class ProfileViewModel extends ViewModel {
 
     public void signOut() {
         repository.signOut();
+    }
+
+    private boolean isOperationInProgress() {
+        OperationState currentState = state.getValue();
+        return currentState != null && currentState.getStatus() == OperationState.Status.LOADING;
     }
 }

@@ -118,6 +118,8 @@
         <activity android:name="com.appname.dqra.WebsiteActivity" />
         <activity android:name="com.appname.dqra.HelpSupportActivity"
             android:exported="false" />
+        <activity android:name="com.appname.dqra.AppFeedbackActivity"
+            android:exported="false" />
         <activity android:name="com.appname.dqra.AboutActivity"
             android:exported="false" />
         <activity android:name="com.appname.dqra.AddEmergencyContactActivity"

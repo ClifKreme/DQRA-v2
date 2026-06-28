@@ -31,11 +31,17 @@ import com.appname.dqra.repository.AdminProfileRepository;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.util.concurrent.TimeUnit;
+
 public class AdminProfileActivity extends BaseActivity {
 
     private static final int PROFILE_IMAGE_MAX_SIZE = 512;
     private static final int PROFILE_IMAGE_QUALITY = 70;
+    private static final long UPDATE_COOLDOWN_MS = TimeUnit.DAYS.toMillis(30);
+
     private AdminProfileRepository adminProfileRepository;
+    private long profileLastUpdatedAt = 0L;
+    private long photoLastUpdatedAt = 0L;
 
     // Header views
     private ImageView ivAdminProfileAvatar;
@@ -115,7 +121,19 @@ public class AdminProfileActivity extends BaseActivity {
         FrameLayout flAvatarContainer = findViewById(R.id.flAdminAvatarContainer);
         flAvatarContainer.setOnClickListener(v -> showProfilePhotoOptions());
 
-        btnAdminEdit.setOnClickListener(v -> enterEditMode());
+        btnAdminEdit.setOnClickListener(v -> {
+            long daysLeft = daysUntilNextUpdate();
+            if (daysLeft > 0) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Update Not Allowed")
+                        .setMessage("You can only update your profile once per month.\n"
+                                + "Please wait " + daysLeft + " more day(s).")
+                        .setPositiveButton("OK", null)
+                        .show();
+                return;
+            }
+            enterEditMode();
+        });
         btnAdminSave.setOnClickListener(v -> saveProfile());
         btnAdminCancel.setOnClickListener(v -> exitEditMode());
         btnAdminMenu.setOnClickListener(this::showBurgerMenu);
@@ -161,6 +179,25 @@ public class AdminProfileActivity extends BaseActivity {
 
     private void showProfilePhotoOptions() {
         boolean hasPhoto = currentProfileImageBase64 != null && !currentProfileImageBase64.trim().isEmpty();
+
+        long daysLeft = daysUntilNextPhotoUpdate();
+        if (daysLeft > 0) {
+            if (hasPhoto) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Profile Photo")
+                        .setItems(new String[]{"View Photo"}, (dialog, which) -> viewFullScreenPhoto())
+                        .show();
+            } else {
+                new AlertDialog.Builder(this)
+                        .setTitle("Photo Change Not Allowed")
+                        .setMessage("You can only change your profile photo once per month.\n"
+                                + "Please wait " + daysLeft + " more day(s).")
+                        .setPositiveButton("OK", null)
+                        .show();
+            }
+            return;
+        }
+
         String[] options = hasPhoto
                 ? new String[]{"View Photo", "Change Photo"}
                 : new String[]{"Upload Photo"};
@@ -181,6 +218,26 @@ public class AdminProfileActivity extends BaseActivity {
         Intent intent = new Intent(this, com.appname.dqra.image.FullScreenImageActivity.class);
         intent.putExtra("image_base64", currentProfileImageBase64);
         startActivity(intent);
+    }
+
+    // ─── Cooldown ─────────────────────────────────────────────────────────────
+
+    /** Returns days remaining in the 30-day cooldown, or 0 if the admin can update now. */
+    private long daysUntilNextUpdate() {
+        if (profileLastUpdatedAt == 0L) return 0;
+        long elapsed = System.currentTimeMillis() - profileLastUpdatedAt;
+        long remaining = UPDATE_COOLDOWN_MS - elapsed;
+        if (remaining <= 0) return 0;
+        return (long) Math.ceil(remaining / (double) java.util.concurrent.TimeUnit.DAYS.toMillis(1));
+    }
+
+    /** Returns days remaining before the photo can be changed, or 0 if allowed now. */
+    private long daysUntilNextPhotoUpdate() {
+        if (photoLastUpdatedAt == 0L) return 0;
+        long elapsed = System.currentTimeMillis() - photoLastUpdatedAt;
+        long remaining = UPDATE_COOLDOWN_MS - elapsed;
+        if (remaining <= 0) return 0;
+        return (long) Math.ceil(remaining / (double) java.util.concurrent.TimeUnit.DAYS.toMillis(1));
     }
 
     // ─── Edit mode ───────────────────────────────────────────────────────────
@@ -239,6 +296,7 @@ public class AdminProfileActivity extends BaseActivity {
                 new AdminProfileRepository.Callback<Void>() {
                     @Override
                     public void onSuccess(Void value) {
+                        profileLastUpdatedAt = System.currentTimeMillis();
                         tvAdminStationName.setText(stationName);
                         tvAdminMunicipality.setText(municipality);
                         tvAdminStationPhone.setText(stationPhone.isEmpty() ? "N/A" : stationPhone);
@@ -291,6 +349,8 @@ public class AdminProfileActivity extends BaseActivity {
         tvAdminStationPhone.setText(stationPhone);
         tvAdminEmail.setText(email);
 
+        profileLastUpdatedAt = profile.getProfileLastUpdatedAt();
+        photoLastUpdatedAt = profile.getPhotoLastUpdatedAt();
         currentProfileImageBase64 = profile.getProfileImageBase64();
         renderProfileImage(currentProfileImageBase64);
     }
@@ -308,6 +368,7 @@ public class AdminProfileActivity extends BaseActivity {
                     new AdminProfileRepository.Callback<Void>() {
                         @Override
                         public void onSuccess(Void value) {
+                        photoLastUpdatedAt = System.currentTimeMillis();
                         currentProfileImageBase64 = encodedImage;
                         renderProfileImage(encodedImage);
                             Toast.makeText(AdminProfileActivity.this,
