@@ -8,6 +8,8 @@ public class EmergencyLocation {
     private String reportedBy;
     private long timestamp;
     private String status; // NEW: Status field (pending, confirmed, resolved, rejected)
+    private String confirmedBy;
+    private String resolvedBy;
 
     // Empty constructor needed for Firestore
     public EmergencyLocation() {
@@ -64,6 +66,14 @@ public class EmergencyLocation {
         return status;
     }
 
+    public String getConfirmedBy() {
+        return confirmedBy;
+    }
+
+    public String getResolvedBy() {
+        return resolvedBy;
+    }
+
     // Setters (needed for Firestore)
     public void setId(String id) {
         this.id = id;
@@ -91,5 +101,13 @@ public class EmergencyLocation {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public void setConfirmedBy(String confirmedBy) {
+        this.confirmedBy = confirmedBy;
+    }
+
+    public void setResolvedBy(String resolvedBy) {
+        this.resolvedBy = resolvedBy;
     }
 }

@@ -63,6 +63,7 @@ public class EmergencyLocationAdapter extends RecyclerView.Adapter<EmergencyLoca
                     + "  |  " + getStatusBadge(status));
         }
 
+        bindClaimedByIndicator(emergency, holder);
         fetchPhoneNumber(emergency.getReportedBy(), holder.tvPhoneNumber, holder.btnCall);
 
         holder.btnViewMap.setOnClickListener(v -> {
@@ -73,12 +74,18 @@ public class EmergencyLocationAdapter extends RecyclerView.Adapter<EmergencyLoca
             context.startActivity(intent);
         });
 
-        if (STATUS_CONFIRMED.equals(status)) {
+        if (STATUS_CONFIRMED.equals(status) && isClaimedByCurrentAdmin(emergency)) {
             holder.btnResolve.setVisibility(View.VISIBLE);
             holder.btnResolve.setOnClickListener(v -> showResolveConfirmationDialog(emergency, position));
         } else {
             holder.btnResolve.setVisibility(View.GONE);
         }
+    }
+
+    private boolean isClaimedByCurrentAdmin(EmergencyLocation emergency) {
+        String currentAdminId = emergencyRepository.getCurrentAdminId();
+        String confirmedBy = emergency.getConfirmedBy();
+        return currentAdminId != null && confirmedBy != null && currentAdminId.equals(confirmedBy);
     }
 
     private String getStatusBadge(String status) {
@@ -94,6 +101,39 @@ public class EmergencyLocationAdapter extends RecyclerView.Adapter<EmergencyLoca
             default:
                 return status.toUpperCase();
         }
+    }
+
+    private void bindClaimedByIndicator(EmergencyLocation emergency, ViewHolder holder) {
+        String status = emergency.getStatus();
+        String confirmedBy = emergency.getConfirmedBy();
+
+        if (!STATUS_CONFIRMED.equals(status) || confirmedBy == null || confirmedBy.trim().isEmpty()) {
+            holder.tvClaimedBy.setVisibility(View.GONE);
+            holder.tvClaimedBy.setTag(null);
+            return;
+        }
+
+        holder.tvClaimedBy.setVisibility(View.VISIBLE);
+        holder.tvClaimedBy.setText("Claimed by: Loading station...");
+        holder.tvClaimedBy.setTag(confirmedBy);
+
+        emergencyRepository.fetchAdminStationName(confirmedBy, new EmergencyRepository.Callback<String>() {
+            @Override
+            public void onSuccess(String stationName) {
+                if (!confirmedBy.equals(holder.tvClaimedBy.getTag())) {
+                    return;
+                }
+                holder.tvClaimedBy.setText("Claimed by: " + stationName);
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                if (!confirmedBy.equals(holder.tvClaimedBy.getTag())) {
+                    return;
+                }
+                holder.tvClaimedBy.setText("Claimed by: Unknown station");
+            }
+        });
     }
 
     private void showResolveConfirmationDialog(EmergencyLocation emergency, int position) {
@@ -156,7 +196,7 @@ public class EmergencyLocationAdapter extends RecyclerView.Adapter<EmergencyLoca
     }
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
-        public TextView tvMunicipality, tvReportedBy, tvTimestamp, tvPhoneNumber;
+        public TextView tvMunicipality, tvReportedBy, tvTimestamp, tvPhoneNumber, tvClaimedBy;
         public Button btnViewMap, btnCall, btnResolve;
 
         public ViewHolder(@NonNull View itemView) {
@@ -165,6 +205,7 @@ public class EmergencyLocationAdapter extends RecyclerView.Adapter<EmergencyLoca
             tvReportedBy = itemView.findViewById(R.id.tvReportedBy);
             tvTimestamp = itemView.findViewById(R.id.tvTimestamp);
             tvPhoneNumber = itemView.findViewById(R.id.tvPhoneNumber);
+            tvClaimedBy = itemView.findViewById(R.id.tvClaimedBy);
             btnViewMap = itemView.findViewById(R.id.btnViewMap);
             btnCall = itemView.findViewById(R.id.btnCall);
             btnResolve = itemView.findViewById(R.id.btnResolve);

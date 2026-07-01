@@ -10,7 +10,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.appname.dqra.maindashboards.AdminDashboard;
 import com.appname.dqra.model.EmergencyLocation;
 import com.appname.dqra.repository.EmergencyRepository;
 import java.util.ArrayList;
@@ -49,8 +48,6 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
         // Initialize Back Button as ImageButton
         ImageButton btnBack = findViewById(R.id.btnBackToDashboard);
         btnBack.setOnClickListener(v -> {
-            Intent backIntent = new Intent(EmergencyLogsAdapter.this, AdminDashboard.class);
-            startActivity(backIntent);
             finish();
         });
 
@@ -88,6 +85,8 @@ public class EmergencyLogsAdapter extends AppCompatActivity {
             }
             if (onlyCurrentAdmin && "confirmed".equals(statusFilter)) {
                 title = "My Active Emergencies Today";
+            } else if (!onlyCurrentAdmin && "confirmed".equals(statusFilter)) {
+                title = "Overall Active Emergencies";
             } else if (onlyCurrentAdmin && "resolved".equals(statusFilter)) {
                 title = "My Resolved Emergencies Today";
             }

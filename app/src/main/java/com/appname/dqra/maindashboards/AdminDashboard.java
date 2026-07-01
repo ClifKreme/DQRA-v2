@@ -112,7 +112,7 @@ public class AdminDashboard extends BaseActivity {
     private Button btnConfirm, btnReject, btnViewImage;
     private Button btnShareMessenger; // ✅ NEW
     private TextView tvEmergencyAlert, tvEmergencyDetails;
-    private TextView tvPendingCount, tvActiveCount, tvResolvedCount;
+    private TextView tvPendingCount, tvActiveCount, tvOverallActiveCount, tvResolvedCount;
     private TextView tvStatusIcon, tvEmergencyTime, tvSenderName;
     private TextView tvEmergencyActionsHeader, tvInfoHeader;
     private TextView tvAdminMunicipality;
@@ -837,6 +837,7 @@ public class AdminDashboard extends BaseActivity {
     private void setStatisticsCardsEnabled(boolean enabled) {
         LinearLayout layoutPending = findViewById(R.id.layoutPending);
         LinearLayout layoutActive = findViewById(R.id.layoutActive);
+        LinearLayout layoutOverallActive = findViewById(R.id.layoutOverallActive);
         LinearLayout layoutResolved = findViewById(R.id.layoutResolved);
 
         if (layoutPending != null) {
@@ -847,6 +848,11 @@ public class AdminDashboard extends BaseActivity {
         if (layoutActive != null) {
             layoutActive.setEnabled(enabled);
             layoutActive.setAlpha(enabled ? 1.0f : 0.5f);
+        }
+
+        if (layoutOverallActive != null) {
+            layoutOverallActive.setEnabled(enabled);
+            layoutOverallActive.setAlpha(enabled ? 1.0f : 0.5f);
         }
 
         if (layoutResolved != null) {
@@ -899,6 +905,8 @@ public class AdminDashboard extends BaseActivity {
         }
 
         switch (state.getStatus()) {
+            case IDLE:
+                break;
             case EMPTY:
                 Log.d(TAG, "No emergency documents found for municipality: " + adminMunicipality);
                 cancelPendingEmergencySwitch();
@@ -924,10 +932,14 @@ public class AdminDashboard extends BaseActivity {
 
         if (tvPendingCount != null) tvPendingCount.setText(String.valueOf(stats.getPendingCount()));
         if (tvActiveCount != null) tvActiveCount.setText(String.valueOf(stats.getActiveCount()));
+        if (tvOverallActiveCount != null) {
+            tvOverallActiveCount.setText(String.valueOf(stats.getOverallActiveCount()));
+        }
         if (tvResolvedCount != null) tvResolvedCount.setText(String.valueOf(stats.getResolvedCount()));
 
         Log.d(TAG, "Statistics updated - Pending: " + stats.getPendingCount()
                 + ", Active: " + stats.getActiveCount()
+                + ", Overall Active: " + stats.getOverallActiveCount()
                 + ", Resolved (all): " + stats.getResolvedCount());
     }
 
@@ -1027,6 +1039,7 @@ public class AdminDashboard extends BaseActivity {
 
         tvPendingCount = findViewById(R.id.tvPendingCount);
         tvActiveCount = findViewById(R.id.tvActiveCount);
+        tvOverallActiveCount = findViewById(R.id.tvOverallActiveCount);
         tvResolvedCount = findViewById(R.id.tvResolvedCount);
         tvStatusIcon = findViewById(R.id.tvStatusIcon);
         tvEmergencyTime = findViewById(R.id.tvEmergencyTime);
@@ -1158,6 +1171,7 @@ public class AdminDashboard extends BaseActivity {
     private void setupStatisticsClickListeners() {
         LinearLayout layoutPending = findViewById(R.id.layoutPending);
         LinearLayout layoutActive = findViewById(R.id.layoutActive);
+        LinearLayout layoutOverallActive = findViewById(R.id.layoutOverallActive);
         LinearLayout layoutResolved = findViewById(R.id.layoutResolved);
 
         layoutPending.setOnClickListener(v -> {
@@ -1165,7 +1179,7 @@ public class AdminDashboard extends BaseActivity {
                 showPendingEmergencyWarning();
                 return;
             }
-            redirectToFilteredLogs("pending");
+            redirectToFilteredLogs("pending", false);
         });
 
         layoutActive.setOnClickListener(v -> {
@@ -1173,7 +1187,15 @@ public class AdminDashboard extends BaseActivity {
                 showPendingEmergencyWarning();
                 return;
             }
-            redirectToFilteredLogs("confirmed");
+            redirectToFilteredLogs("confirmed", true);
+        });
+
+        layoutOverallActive.setOnClickListener(v -> {
+            if (!v.isEnabled()) {
+                showPendingEmergencyWarning();
+                return;
+            }
+            redirectToFilteredLogs("confirmed", false);
         });
 
         layoutResolved.setOnClickListener(v -> {
@@ -1181,7 +1203,7 @@ public class AdminDashboard extends BaseActivity {
                 showPendingEmergencyWarning();
                 return;
             }
-            redirectToFilteredLogs("resolved");
+            redirectToFilteredLogs("resolved", true);
         });
     }
 
@@ -1191,11 +1213,10 @@ public class AdminDashboard extends BaseActivity {
                 Toast.LENGTH_LONG).show();
     }
 
-    private void redirectToFilteredLogs(String statusFilter) {
+    private void redirectToFilteredLogs(String statusFilter, boolean onlyCurrentAdmin) {
         Intent intent = new Intent(this, EmergencyLogsAdapter.class);
         intent.putExtra("STATUS_FILTER", statusFilter);
-        intent.putExtra("ONLY_CURRENT_ADMIN",
-                STATUS_CONFIRMED.equals(statusFilter) || STATUS_RESOLVED.equals(statusFilter));
+        intent.putExtra("ONLY_CURRENT_ADMIN", onlyCurrentAdmin);
         startActivity(intent);
     }
 
@@ -1284,6 +1305,7 @@ public class AdminDashboard extends BaseActivity {
             runOnUiThread(() -> {
                 if (tvPendingCount != null) tvPendingCount.setText("0");
                 if (tvActiveCount != null) tvActiveCount.setText("0");
+                if (tvOverallActiveCount != null) tvOverallActiveCount.setText("0");
                 if (tvResolvedCount != null) tvResolvedCount.setText("0");
             });
             return;
@@ -1489,6 +1511,7 @@ public class AdminDashboard extends BaseActivity {
             clearEmergencyUI();
 
             currentEmergencyId = "";
+            viewModel.setCurrentEmergencyId(currentEmergencyId);
             emergencyLatitude = 0;
             emergencyLongitude = 0;
             Phone = "";
@@ -1652,6 +1675,10 @@ public class AdminDashboard extends BaseActivity {
                 currentReporterProfileImageBase64 = emergency.getReportedByProfileImageBase64() != null
                         ? emergency.getReportedByProfileImageBase64() : "";
 
+                if (STATUS_CONFIRMED.equals(currentEmergencyStatus)) {
+                    viewModel.setCurrentActiveEmergencyId(currentEmergencyId);
+                }
+
                 Log.d(TAG, "Processing emergency ID: " + emergencyId + ", isNew: " + isNewEmergency +
                         ", status: " + currentEmergencyStatus + ", hasImage: " + currentEmergencyHasImage);
 
@@ -1771,6 +1798,7 @@ public class AdminDashboard extends BaseActivity {
             Button btnComplete = findViewById(R.id.btnComplete);
 
             if (STATUS_PENDING.equals(currentEmergencyStatus)) {
+                setStatisticsCardsEnabled(false);
                 btnConfirm.setVisibility(View.VISIBLE);
                 btnReject.setVisibility(View.VISIBLE);
                 btnStopSound.setVisibility(View.VISIBLE);
@@ -1778,6 +1806,7 @@ public class AdminDashboard extends BaseActivity {
                 playEmergencyAlerts();
             } else if (STATUS_CONFIRMED.equals(currentEmergencyStatus)) {
                 stopEmergencyAlerts();
+                setStatisticsCardsEnabled(true);
 
                 btnConfirm.setVisibility(View.GONE);
                 btnReject.setVisibility(View.GONE);
@@ -1790,6 +1819,7 @@ public class AdminDashboard extends BaseActivity {
                 }
             } else {
                 stopEmergencyAlerts();
+                setStatisticsCardsEnabled(true);
 
                 btnConfirm.setVisibility(View.GONE);
                 btnReject.setVisibility(View.GONE);
@@ -1992,9 +2022,8 @@ public class AdminDashboard extends BaseActivity {
         }
 
         viewModel.rejectEmergency(emergencyId);
-        saveCurrentEmergencyToPrefs();
         Toast.makeText(this, "Emergency rejected", Toast.LENGTH_SHORT).show();
-        updateEmergencyUI();
+        clearCurrentEmergency();
         updateEmergencyStatistics();
     }
 

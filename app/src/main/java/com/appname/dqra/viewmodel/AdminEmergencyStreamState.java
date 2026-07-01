@@ -3,6 +3,7 @@ package com.appname.dqra.viewmodel;
 public class AdminEmergencyStreamState {
 
     public enum Status {
+        IDLE,
         EMPTY,
         EMERGENCY,
         ERROR
@@ -16,6 +17,10 @@ public class AdminEmergencyStreamState {
         this.status = status;
         this.emergency = emergency;
         this.message = message;
+    }
+
+    public static AdminEmergencyStreamState idle() {
+        return new AdminEmergencyStreamState(Status.IDLE, null, null);
     }
 
     public static AdminEmergencyStreamState empty() {

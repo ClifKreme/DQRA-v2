@@ -14,6 +14,7 @@ import com.google.firebase.firestore.ListenerRegistration;
 import com.google.firebase.firestore.QueryDocumentSnapshot;
 import com.google.firebase.firestore.SetOptions;
 
+import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Calendar;
@@ -114,6 +115,7 @@ public class AdminDashboardRepository {
 
     public ListenerRegistration listenForEmergencies(String municipality,
                                                      String currentEmergencyId,
+                                                     String currentActiveEmergencyId,
                                                      EmergencyListener listener) {
         String currentAdminId = getCurrentUserId();
         return firestore.collection(EMERGENCIES_COLLECTION)
@@ -131,6 +133,7 @@ public class AdminDashboardRepository {
 
                     QueryDocumentSnapshot mostRecentPendingEmergency = null;
                     QueryDocumentSnapshot currentEmergencyDoc = null;
+                    QueryDocumentSnapshot currentActiveEmergencyDoc = null;
                     long mostRecentTimestamp = 0;
 
                     for (QueryDocumentSnapshot document : queryDocumentSnapshots) {
@@ -139,7 +142,13 @@ public class AdminDashboardRepository {
 
                         boolean isOldEmergency = timestamp > 0
                                 && System.currentTimeMillis() - timestamp > 10 * 60 * 60 * 1000;
-                        if (isOldEmergency && !emergencyId.equals(currentEmergencyId)) {
+                        if (isOldEmergency
+                                && !emergencyId.equals(currentEmergencyId)
+                                && !emergencyId.equals(currentActiveEmergencyId)) {
+                            continue;
+                        }
+
+                        if (isRejectedByCurrentAdmin(document, currentAdminId)) {
                             continue;
                         }
 
@@ -153,12 +162,22 @@ public class AdminDashboardRepository {
                                 && shouldShowEmergencyToAdmin(document, currentAdminId)) {
                             currentEmergencyDoc = document;
                         }
+
+                        if (emergencyId.equals(currentActiveEmergencyId)
+                                && shouldShowEmergencyToAdmin(document, currentAdminId)) {
+                            currentActiveEmergencyDoc = document;
+                        }
                     }
 
-                    if (mostRecentPendingEmergency != null) {
+                    if (mostRecentPendingEmergency != null
+                            && shouldPreferPendingEmergency(currentEmergencyDoc)) {
                         listener.onEmergency(emergencyFromDocument(mostRecentPendingEmergency));
                     } else if (currentEmergencyDoc != null) {
                         listener.onEmergency(emergencyFromDocument(currentEmergencyDoc));
+                    } else if (currentActiveEmergencyDoc != null) {
+                        listener.onEmergency(emergencyFromDocument(currentActiveEmergencyDoc));
+                    } else if (mostRecentPendingEmergency != null) {
+                        listener.onEmergency(emergencyFromDocument(mostRecentPendingEmergency));
                     } else {
                         listener.onEmpty();
                     }
@@ -180,16 +199,20 @@ public class AdminDashboardRepository {
                 .addOnSuccessListener(queryDocumentSnapshots -> {
                     int pendingCount = 0;
                     int activeCount = 0;
+                    int overallActiveCount = 0;
                     int resolvedCount = 0;
 
                     for (QueryDocumentSnapshot document : queryDocumentSnapshots) {
                         String status = document.getString("status");
-                        if (STATUS_PENDING.equals(status)) {
+                        if (STATUS_PENDING.equals(status)
+                                && !isRejectedByCurrentAdmin(document, currentAdminId)) {
                             pendingCount++;
-                        } else if (STATUS_CONFIRMED.equals(status)
-                                && isHandledByCurrentAdmin(document, currentAdminId)
-                                && getAdminStatusTimestamp(document, status) >= startOfToday) {
-                            activeCount++;
+                        } else if (STATUS_CONFIRMED.equals(status)) {
+                            overallActiveCount++;
+                            if (isHandledByCurrentAdmin(document, currentAdminId)
+                                    && getAdminStatusTimestamp(document, status) >= startOfToday) {
+                                activeCount++;
+                            }
                         } else if ((STATUS_RESOLVED.equals(status) || "completed".equals(status))
                                 && isHandledByCurrentAdmin(document, currentAdminId)
                                 && getAdminStatusTimestamp(document, status) >= startOfToday) {
@@ -197,7 +220,8 @@ public class AdminDashboardRepository {
                         }
                     }
 
-                    callback.onSuccess(new AdminEmergencyStats(pendingCount, activeCount, resolvedCount));
+                    callback.onSuccess(new AdminEmergencyStats(
+                            pendingCount, activeCount, overallActiveCount, resolvedCount));
                 })
                 .addOnFailureListener(callback::onError);
     }
@@ -208,14 +232,16 @@ public class AdminDashboardRepository {
             return;
         }
 
+        if (STATUS_REJECTED.equals(status)) {
+            rejectEmergencyForCurrentAdmin(emergencyId, callback);
+            return;
+        }
+
         Map<String, Object> updates = new HashMap<>();
         updates.put("status", status);
         String uid = getCurrentUserId();
 
-        if (STATUS_REJECTED.equals(status)) {
-            updates.put("rejectedAt", FieldValue.serverTimestamp());
-            updates.put("rejectedBy", uid == null ? "unknown" : uid);
-        } else if (STATUS_RESOLVED.equals(status)) {
+        if (STATUS_RESOLVED.equals(status)) {
             updates.put("resolvedAt", FieldValue.serverTimestamp());
             updates.put("resolvedBy", uid == null ? "unknown" : uid);
         }
@@ -225,6 +251,17 @@ public class AdminDashboardRepository {
                 .update(updates)
                 .addOnSuccessListener(unused -> callback.onSuccess(null))
                 .addOnFailureListener(callback::onError);
+    }
+
+    private void rejectEmergencyForCurrentAdmin(String emergencyId, ValueCallback<Void> callback) {
+        String uid = getCurrentUserId();
+        if (uid == null) {
+            callback.onError(new IllegalStateException("Admin is not signed in"));
+            return;
+        }
+
+        AppCache.getInstance().addRejectedEmergencyForAdmin(uid, emergencyId);
+        callback.onSuccess(null);
     }
 
     private void claimEmergency(String emergencyId, ValueCallback<Void> callback) {
@@ -425,10 +462,39 @@ public class AdminDashboardRepository {
     }
 
     private boolean shouldShowEmergencyToAdmin(QueryDocumentSnapshot document, String adminId) {
+        if (isRejectedByCurrentAdmin(document, adminId)) {
+            return false;
+        }
+
         String status = document.getString("status");
         return STATUS_PENDING.equals(status)
                 || ((STATUS_CONFIRMED.equals(status) || STATUS_RESOLVED.equals(status))
                 && isHandledByCurrentAdmin(document, adminId));
+    }
+
+    private boolean shouldPreferPendingEmergency(QueryDocumentSnapshot currentEmergencyDoc) {
+        if (currentEmergencyDoc == null) {
+            return true;
+        }
+
+        return !STATUS_PENDING.equals(currentEmergencyDoc.getString("status"));
+    }
+
+    private boolean isRejectedByCurrentAdmin(QueryDocumentSnapshot document, String adminId) {
+        if (adminId == null) {
+            return false;
+        }
+
+        if (AppCache.getInstance().isEmergencyRejectedByAdmin(adminId, document.getId())) {
+            return true;
+        }
+
+        Object rejectedByAdminIds = document.get("rejectedByAdminIds");
+        if (rejectedByAdminIds instanceof List<?> && ((List<?>) rejectedByAdminIds).contains(adminId)) {
+            return true;
+        }
+
+        return adminId.equals(document.getString("rejectedBy"));
     }
 
     private long getAdminStatusTimestamp(QueryDocumentSnapshot document, String status) {

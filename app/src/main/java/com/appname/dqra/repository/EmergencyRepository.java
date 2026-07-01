@@ -2,6 +2,7 @@ package com.appname.dqra.repository;
 
 import com.appname.dqra.cache.AppCache;
 import com.appname.dqra.model.EmergencyLocation;
+import com.appname.dqra.security.AesCrypto;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.FieldValue;
@@ -232,6 +233,36 @@ public class EmergencyRepository {
                         callback.onError(exception);
                     }
                 });
+    }
+
+    public void fetchAdminStationName(String adminId, Callback<String> callback) {
+        if (adminId == null || adminId.trim().isEmpty()) {
+            callback.onSuccess("Unknown station");
+            return;
+        }
+
+        firestore.collection(ADMINS_COLLECTION)
+                .document(adminId)
+                .get()
+                .addOnSuccessListener(document -> {
+                    if (!document.exists()) {
+                        callback.onSuccess("Unknown station");
+                        return;
+                    }
+
+                    String stationName = AesCrypto.decrypt(document.getString("stationName"));
+                    if (stationName == null || stationName.trim().isEmpty()) {
+                        callback.onSuccess("Unknown station");
+                        return;
+                    }
+
+                    callback.onSuccess(stationName);
+                })
+                .addOnFailureListener(callback::onError);
+    }
+
+    public String getCurrentAdminId() {
+        return auth.getCurrentUser() == null ? null : auth.getCurrentUser().getUid();
     }
 
     public void hasPendingEmergency(String reportedBy, Callback<Boolean> callback) {

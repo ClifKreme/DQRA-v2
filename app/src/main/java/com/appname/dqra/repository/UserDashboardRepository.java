@@ -142,6 +142,9 @@ public class UserDashboardRepository {
         String phoneNumber = AesCrypto.decrypt(document.getString("stationPhone"));
         String phoneNumber2 = AesCrypto.decrypt(document.getString("stationPhone2"));
         String messengerLink = AesCrypto.decrypt(document.getString("messengerLink"));
+        if (messengerLink == null || messengerLink.trim().isEmpty()) {
+            messengerLink = AesCrypto.decrypt(document.getString("facebookPage"));
+        }
         String profileImageBase64 = document.getString("profileImageBase64");
 
         RescueStation station = new RescueStation(name, municipality, phoneNumber);

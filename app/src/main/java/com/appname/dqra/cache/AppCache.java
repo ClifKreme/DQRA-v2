@@ -14,7 +14,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class AppCache {
 
@@ -105,6 +107,26 @@ public class AppCache {
         return array == null ? null : emergencyLogsFromJson(array);
     }
 
+    public void addRejectedEmergencyForAdmin(String adminId, String emergencyId) {
+        if (adminId == null || adminId.isEmpty() || emergencyId == null || emergencyId.isEmpty()) {
+            return;
+        }
+
+        String key = rejectedEmergenciesKey(adminId);
+        Set<String> rejectedIds = new HashSet<>(preferences.getStringSet(key, new HashSet<>()));
+        rejectedIds.add(emergencyId);
+        preferences.edit().putStringSet(key, rejectedIds).apply();
+    }
+
+    public boolean isEmergencyRejectedByAdmin(String adminId, String emergencyId) {
+        if (adminId == null || adminId.isEmpty() || emergencyId == null || emergencyId.isEmpty()) {
+            return false;
+        }
+
+        return preferences.getStringSet(rejectedEmergenciesKey(adminId), new HashSet<>())
+                .contains(emergencyId);
+    }
+
     private void putObject(String key, JSONObject object) {
         preferences.edit().putString(key, object.toString()).apply();
     }
@@ -141,6 +163,10 @@ public class AppCache {
 
     private String emergencyLogsKey(String municipality, String statusFilter) {
         return "emergency_logs_" + safe(municipality) + "_" + safe(statusFilter);
+    }
+
+    private String rejectedEmergenciesKey(String adminId) {
+        return "rejected_emergencies_" + safe(adminId);
     }
 
     private JSONObject userProfileToJson(UserProfile profile) {
@@ -266,6 +292,8 @@ public class AppCache {
             put(object, "reportedBy", log.getReportedBy());
             put(object, "timestamp", log.getTimestamp());
             put(object, "status", log.getStatus());
+            put(object, "confirmedBy", log.getConfirmedBy());
+            put(object, "resolvedBy", log.getResolvedBy());
             array.put(object);
         }
         return array;
@@ -286,6 +314,8 @@ public class AppCache {
             log.setReportedBy(nullableString(object, "reportedBy"));
             log.setTimestamp(object.optLong("timestamp", 0));
             log.setStatus(nullableString(object, "status"));
+            log.setConfirmedBy(nullableString(object, "confirmedBy"));
+            log.setResolvedBy(nullableString(object, "resolvedBy"));
             logs.add(log);
         }
         return logs;

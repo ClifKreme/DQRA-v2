@@ -19,15 +19,16 @@ public class AdminDashboardViewModel extends ViewModel {
     private final MutableLiveData<AdminDashboardUiState> dashboardState =
             new MutableLiveData<>(AdminDashboardUiState.idle());
     private final MutableLiveData<AdminEmergencyStreamState> emergencyState =
-            new MutableLiveData<>(AdminEmergencyStreamState.empty());
+            new MutableLiveData<>(AdminEmergencyStreamState.idle());
     private final MutableLiveData<AdminEmergencyStats> statsState =
-            new MutableLiveData<>(new AdminEmergencyStats(0, 0, 0));
+            new MutableLiveData<>(new AdminEmergencyStats(0, 0, 0, 0));
     private final MutableLiveData<String> actionError = new MutableLiveData<>();
     private final MutableLiveData<String> actionSuccess = new MutableLiveData<>();
 
     private ListenerRegistration emergencyListener;
     private String adminMunicipality = "";
     private String currentEmergencyId = "";
+    private String currentActiveEmergencyId = "";
 
     public AdminDashboardViewModel() {
         this(new AdminDashboardRepository());
@@ -70,7 +71,27 @@ public class AdminDashboardViewModel extends ViewModel {
     }
 
     public void setCurrentEmergencyId(String currentEmergencyId) {
-        this.currentEmergencyId = currentEmergencyId == null ? "" : currentEmergencyId;
+        String newEmergencyId = currentEmergencyId == null ? "" : currentEmergencyId;
+        if (newEmergencyId.equals(this.currentEmergencyId)) {
+            return;
+        }
+
+        this.currentEmergencyId = newEmergencyId;
+        if (emergencyListener != null && adminMunicipality != null && !adminMunicipality.isEmpty()) {
+            startEmergencyListener();
+        }
+    }
+
+    public void setCurrentActiveEmergencyId(String emergencyId) {
+        String newEmergencyId = emergencyId == null ? "" : emergencyId;
+        if (newEmergencyId.equals(this.currentActiveEmergencyId)) {
+            return;
+        }
+
+        this.currentActiveEmergencyId = newEmergencyId;
+        if (emergencyListener != null && adminMunicipality != null && !adminMunicipality.isEmpty()) {
+            startEmergencyListener();
+        }
     }
 
     public void loadAdminMunicipality() {
@@ -100,6 +121,7 @@ public class AdminDashboardViewModel extends ViewModel {
         emergencyListener = repository.listenForEmergencies(
                 adminMunicipality,
                 currentEmergencyId,
+                currentActiveEmergencyId,
                 new AdminDashboardRepository.EmergencyListener() {
                     @Override
                     public void onEmpty() {
@@ -127,7 +149,7 @@ public class AdminDashboardViewModel extends ViewModel {
 
     public void refreshStats() {
         if (adminMunicipality == null || adminMunicipality.isEmpty()) {
-            statsState.setValue(new AdminEmergencyStats(0, 0, 0));
+            statsState.setValue(new AdminEmergencyStats(0, 0, 0, 0));
             return;
         }
 
@@ -145,6 +167,7 @@ public class AdminDashboardViewModel extends ViewModel {
     }
 
     public void confirmEmergency(String emergencyId) {
+        setCurrentActiveEmergencyId(emergencyId);
         updateEmergencyStatus(emergencyId, STATUS_CONFIRMED, "Emergency confirmed");
     }
 
@@ -153,6 +176,9 @@ public class AdminDashboardViewModel extends ViewModel {
     }
 
     public void resolveEmergency(String emergencyId) {
+        if (emergencyId != null && emergencyId.equals(currentActiveEmergencyId)) {
+            setCurrentActiveEmergencyId("");
+        }
         updateEmergencyStatus(emergencyId, STATUS_RESOLVED, "Emergency marked as resolved");
     }
 

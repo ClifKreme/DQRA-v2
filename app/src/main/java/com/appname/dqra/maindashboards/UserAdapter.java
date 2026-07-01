@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
 import android.location.Location;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -394,6 +395,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
     private void getLocationAndShareMessage(RescueStation station) {
         String displayName = station.getStationName() != null
                 ? station.getStationName() : station.getName();
+        String messengerName = firstNonEmpty(station.getMessengerLink(), displayName);
         String municipality = station.getMunicipality();
 
         if (ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
@@ -403,7 +405,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
             ActivityCompat.requestPermissions((Activity) context,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
                     LOCATION_PERMISSION_REQUEST_CODE);
-            fetchUserDetailsAndShare(displayName, municipality, 0, 0);
+            fetchUserDetailsAndShare(displayName, messengerName, municipality, 0, 0);
             return;
         }
 
@@ -414,17 +416,17 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                         lat = location.getLatitude();
                         lon = location.getLongitude();
                     }
-                    fetchUserDetailsAndShare(displayName, municipality, lat, lon);
+                    fetchUserDetailsAndShare(displayName, messengerName, municipality, lat, lon);
                 })
                 .addOnFailureListener(e ->
-                        fetchUserDetailsAndShare(displayName, municipality, 0, 0));
+                        fetchUserDetailsAndShare(displayName, messengerName, municipality, 0, 0));
     }
 
-    private void fetchUserDetailsAndShare(String stationName, String stationLocation,
+    private void fetchUserDetailsAndShare(String stationName, String messengerName, String stationLocation,
                                           double lat, double lon) {
         if (!accountRepository.hasCurrentUser()) {
             showShareSheet(createLocationMessage(null, null, stationName, lat, lon),
-                    stationName, stationLocation);
+                    stationName, messengerName, stationLocation);
             return;
         }
 
@@ -438,7 +440,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                 shown[0] = true;
                 showShareSheet(createLocationMessage(profile.getFullName(), profile.getPhone(),
                                 stationName, lat, lon),
-                        stationName, stationLocation);
+                        stationName, messengerName, stationLocation);
             }
 
             @Override
@@ -446,23 +448,62 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                 if (shown[0]) return;
                 shown[0] = true;
                 showShareSheet(createLocationMessage(null, null, stationName, lat, lon),
-                        stationName, stationLocation);
+                        stationName, messengerName, stationLocation);
             }
         });
     }
 
-    private void showShareSheet(String message, String stationName, String stationLocation) {
+    private void showShareSheet(String message, String stationName, String messengerName, String stationLocation) {
         try {
             android.content.ClipboardManager clipboard =
                     (android.content.ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
             clipboard.setPrimaryClip(
                     android.content.ClipData.newPlainText("Emergency Message", message));
-            showMessengerInstructions(stationName, stationLocation, message);
+            showMessengerInstructions(stationName, messengerName, stationLocation, message);
         } catch (Exception e) {
             messengerInFlight = false;
             Toast.makeText(context, "Error preparing message: " + e.getMessage(),
                     Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void showMessengerInstructions(String stationName, String messengerName,
+                                           String stationLocation, String message) {
+        View dialogView = LayoutInflater.from(context)
+                .inflate(R.layout.dialog_messenger_instructions, null);
+
+        TextView tvMessengerSearchName = dialogView.findViewById(R.id.tvMessengerSearchName);
+        TextView tvMessengerStationLocation = dialogView.findViewById(R.id.tvMessengerStationLocation);
+
+        tvMessengerSearchName.setText(firstNonEmpty(messengerName, stationName));
+        tvMessengerStationLocation.setText(firstNonEmpty(stationLocation, "Rescue station"));
+
+        AlertDialog instructionDialog = new AlertDialog.Builder(context)
+                .setView(dialogView)
+                .setPositiveButton("Continue", (dialogInterface, which) -> {
+                    messengerInFlight = false;
+                    Intent shareIntent = new Intent(Intent.ACTION_SEND);
+                    shareIntent.setType("text/plain");
+                    shareIntent.putExtra(Intent.EXTRA_TEXT, message);
+                    shareIntent.putExtra(Intent.EXTRA_SUBJECT, "EMERGENCY - " + stationName);
+                    context.startActivity(Intent.createChooser(shareIntent, "Select Messenger or messaging app"));
+                })
+                .setNegativeButton("Cancel", (dialogInterface, which) -> {
+                    messengerInFlight = false;
+                    Toast.makeText(context, "Message cancelled", Toast.LENGTH_SHORT).show();
+                })
+                .setOnCancelListener(dialogInterface -> messengerInFlight = false)
+                .setIcon(android.R.drawable.ic_dialog_info)
+                .create();
+
+        instructionDialog.setOnShowListener(shownDialog -> {
+            if (instructionDialog.getWindow() != null) {
+                instructionDialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            }
+            instructionDialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Color.parseColor("#0084FF"));
+            instructionDialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Color.parseColor("#666666"));
+        });
+        instructionDialog.show();
     }
 
     private void showMessengerInstructions(String stationName, String stationLocation, String message) {
@@ -509,6 +550,10 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.ViewHolder> {
                 .setOnCancelListener(dialog -> messengerInFlight = false)
                 .setIcon(android.R.drawable.ic_dialog_info)
                 .show();
+    }
+
+    private String firstNonEmpty(String primary, String fallback) {
+        return primary != null && !primary.trim().isEmpty() ? primary.trim() : fallback;
     }
 
     private String createLocationMessage(String fullName, String phoneNumber,
