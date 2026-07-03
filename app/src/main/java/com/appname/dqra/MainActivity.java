@@ -37,14 +37,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void requestPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
             ActivityCompat.requestPermissions(this,
                     new String[]{
-                            Manifest.permission.RECEIVE_SMS,
-                            Manifest.permission.READ_PHONE_STATE,
                             Manifest.permission.ACCESS_FINE_LOCATION,
                             Manifest.permission.ACCESS_COARSE_LOCATION
                     },
@@ -83,16 +80,21 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == PERMISSION_REQUEST_CODE) {
-            // Check RECEIVE_SMS and READ_PHONE_STATE were granted (indices 0 and 1)
-            boolean smsGranted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
-            boolean phoneGranted = grantResults.length > 1 && grantResults[1] == PackageManager.PERMISSION_GRANTED;
+            boolean locationGranted = false;
+            for (int result : grantResults) {
+                if (result == PackageManager.PERMISSION_GRANTED) {
+                    locationGranted = true;
+                    break;
+                }
+            }
 
-            if (smsGranted && phoneGranted) {
-                // Fine location may or may not be granted — proceed either way, then ask background location
+            if (locationGranted) {
                 requestBackgroundLocationIfNeeded();
             } else {
-                Toast.makeText(this, "SMS and Phone State permissions are required!", Toast.LENGTH_LONG).show();
-                finish();
+                Toast.makeText(this,
+                        "Location permission skipped. You can search stations manually.",
+                        Toast.LENGTH_LONG).show();
+                checkNotificationPermission();
             }
         } else if (requestCode == BACKGROUND_LOCATION_REQUEST_CODE) {
             // Background location granted or denied — either way continue to notification check

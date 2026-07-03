@@ -5,13 +5,15 @@
     android:id="@+id/clRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FFA726">
+    android:background="#FFA726"
+    android:clipToPadding="false">
 
     <!-- ===== CONTENT FRAME (full top to above nav) ===== -->
     <FrameLayout
         android:id="@+id/contentFrame"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:clipToPadding="false"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toTopOf="@id/bottomNav"
         app:layout_constraintStart_toStartOf="parent"
@@ -22,8 +24,8 @@
         android:id="@+id/bottomNav"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="20dp"
-        android:layout_marginEnd="20dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
         android:layout_marginBottom="16dp"
         android:orientation="horizontal"
         android:background="@drawable/nav_bar_bg"
@@ -41,6 +43,7 @@
             android:id="@+id/btnHome"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:minHeight="64dp"
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
@@ -80,7 +83,9 @@
                 android:text="Emergency"
                 android:textColor="#FFFFFF"
                 android:textSize="11sp"
-                android:layout_marginTop="3dp"/>
+                android:layout_marginTop="3dp"
+                android:maxLines="1"
+                android:ellipsize="end"/>
 
         </LinearLayout>
 
@@ -89,6 +94,7 @@
             android:id="@+id/btnProfile"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:minHeight="64dp"
             android:layout_weight="1"
             android:orientation="vertical"
             android:gravity="center"
@@ -129,7 +135,9 @@
                 android:text="Profile"
                 android:textColor="#BBBBBB"
                 android:textSize="11sp"
-                android:layout_marginTop="3dp"/>
+                android:layout_marginTop="3dp"
+                android:maxLines="1"
+                android:ellipsize="end"/>
 
         </LinearLayout>
 

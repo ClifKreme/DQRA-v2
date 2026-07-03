@@ -13,7 +13,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:padding="18dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -24,8 +24,8 @@
 
             <com.google.android.material.imageview.ShapeableImageView
                 android:id="@+id/imgStationProfile"
-                android:layout_width="76dp"
-                android:layout_height="76dp"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
                 android:scaleType="centerCrop"
                 android:src="@drawable/ic_profile_placeholder"
                 app:shapeAppearanceOverlay="@style/ShapeAppearance.DQRA.CircleImage"
@@ -37,38 +37,44 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginStart="16dp">
+                android:layout_marginStart="14dp">
 
                 <TextView
                     android:id="@+id/stationName"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Rescue Station Name"
-                    android:textSize="22sp"
+                    android:textSize="20sp"
                     android:textStyle="bold"
-                    android:textColor="@color/black"/>
+                    android:textColor="@color/black"
+                    android:maxLines="2"
+                    android:ellipsize="end"/>
 
                 <TextView
                     android:id="@+id/tvMunicipality"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Municipality"
-                    android:textSize="17sp"
+                    android:textSize="15sp"
                     android:textColor="#666666"
                     android:layout_marginTop="6dp"
                     android:drawableStart="@android:drawable/ic_dialog_map"
-                    android:drawablePadding="6dp"/>
+                    android:drawablePadding="6dp"
+                    android:maxLines="2"
+                    android:ellipsize="end"/>
 
                 <TextView
                     android:id="@+id/stationPhone"
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Phone Number"
-                    android:textSize="17sp"
+                    android:textSize="15sp"
                     android:textColor="#2196F3"
                     android:layout_marginTop="6dp"
                     android:drawableStart="@android:drawable/stat_sys_phone_call"
-                    android:drawablePadding="6dp"/>
+                    android:drawablePadding="6dp"
+                    android:maxLines="2"
+                    android:ellipsize="end"/>
             </LinearLayout>
         </LinearLayout>
 
@@ -91,12 +97,15 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAction"
                     android:layout_width="match_parent"
-                    android:layout_height="76dp"
+                    android:layout_height="wrap_content"
+                    android:minHeight="68dp"
                     android:text="SEND EMERGENCY ALERT"
-                    android:textSize="19sp"
+                    android:textSize="17sp"
                     android:textStyle="bold"
                     android:backgroundTint="#D32F2F"
                     android:textColor="@android:color/white"
+                    android:maxLines="2"
+                    android:ellipsize="end"
                     app:cornerRadius="16dp"/>
 
                 <ProgressBar
@@ -113,11 +122,14 @@
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnMessenger"
                 android:layout_width="match_parent"
-                android:layout_height="64dp"
+                android:layout_height="wrap_content"
+                android:minHeight="56dp"
                 android:text="SHARE LOCATION"
-                android:textSize="17sp"
+                android:textSize="16sp"
                 android:backgroundTint="#0084FF"
                 android:textColor="@android:color/white"
+                android:maxLines="2"
+                android:ellipsize="end"
                 app:cornerRadius="16dp"/>
 
             <TextView
@@ -128,7 +140,10 @@
                 android:textSize="13sp"
                 android:textColor="#777777"
                 android:layout_marginTop="8dp"
-                android:layout_gravity="center_horizontal"/>
+                android:layout_gravity="center_horizontal"
+                android:gravity="center"
+                android:maxLines="2"
+                android:ellipsize="end"/>
 
         </LinearLayout>
 

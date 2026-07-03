@@ -18,6 +18,8 @@
         android:textColor="#666666"
         android:gravity="center"
         android:paddingBottom="8dp"
+        android:maxLines="2"
+        android:ellipsize="end"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
@@ -49,8 +51,10 @@
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/recyclerViewStations"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:layout_gravity="center_vertical"
+            android:clipToPadding="false"
+            android:paddingBottom="88dp"
             android:visibility="visible"/>
 
     </FrameLayout>

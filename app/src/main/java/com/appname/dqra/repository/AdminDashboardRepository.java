@@ -468,8 +468,7 @@ public class AdminDashboardRepository {
 
         String status = document.getString("status");
         return STATUS_PENDING.equals(status)
-                || ((STATUS_CONFIRMED.equals(status) || STATUS_RESOLVED.equals(status))
-                && isHandledByCurrentAdmin(document, adminId));
+                || (STATUS_CONFIRMED.equals(status) && isHandledByCurrentAdmin(document, adminId));
     }
 
     private boolean shouldPreferPendingEmergency(QueryDocumentSnapshot currentEmergencyDoc) {

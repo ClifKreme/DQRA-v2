@@ -1248,23 +1248,18 @@ public class AdminDashboard extends BaseActivity {
 
         if (emergencyId.startsWith("messenger_")) {
             currentEmergencyStatus = STATUS_RESOLVED;
-            saveCurrentEmergencyToPrefs();
 
             runOnUiThread(() -> {
                 Toast.makeText(this, "✓ Messenger emergency marked as resolved", Toast.LENGTH_SHORT).show();
-                updateEmergencyUI();
                 updateEmergencyStatistics();
 
-                new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                    clearCurrentEmergency();
-                }, 2000);
+                clearCurrentEmergency();
             });
             return;
         }
 
         viewModel.resolveEmergency(emergencyId);
         currentEmergencyStatus = STATUS_RESOLVED;
-        saveCurrentEmergencyToPrefs();
 
         runOnUiThread(() -> {
             Toast.makeText(this, "Emergency marked as resolved", Toast.LENGTH_SHORT).show();
@@ -1292,9 +1287,7 @@ public class AdminDashboard extends BaseActivity {
                     "Emergency from " + Reported + " has been marked as resolved",
                     NOTIFICATION_ID_EMERGENCY_RESOLVED);
 
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                clearCurrentEmergency();
-            }, 3000);
+            clearCurrentEmergency();
         });
 
     }

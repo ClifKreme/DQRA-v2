@@ -59,7 +59,7 @@ public class UserDashboardViewModel extends ViewModel {
             @Override
             public void onError(Exception exception) {
                 stationState.setValue(UserDashboardUiState.error(
-                        "Error loading stations. Please try again."));
+                        "Offline mode. Connect to internet once to load rescue stations, or use cached stations if available."));
             }
         });
     }
@@ -86,7 +86,8 @@ public class UserDashboardViewModel extends ViewModel {
 
             @Override
             public void onError(Exception exception) {
-                stationState.setValue(UserDashboardUiState.error("No rescue stations available"));
+                stationState.setValue(UserDashboardUiState.error(
+                        "Offline mode. Connect to internet once to load nearest rescue station data."));
             }
         });
     }

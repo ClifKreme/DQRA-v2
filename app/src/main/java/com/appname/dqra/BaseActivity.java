@@ -5,6 +5,7 @@ import android.graphics.PorterDuff;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -12,6 +13,10 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.appname.dqra.maindashboards.AdminDashboard;
 import com.appname.dqra.maindashboards.UserDashboard;
@@ -25,7 +30,9 @@ public class BaseActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         setContentView(R.layout.activity_base);
+        applySystemBarSpacing();
 
         // Indicators (pill background behind icon)
         indicatorHome    = findViewById(R.id.indicatorHome);
@@ -62,6 +69,42 @@ public class BaseActivity extends AppCompatActivity {
                 finish();
             }
         });
+    }
+
+    private void applySystemBarSpacing() {
+        View root = findViewById(R.id.clRoot);
+        View bottomNav = findViewById(R.id.bottomNav);
+        if (root == null || bottomNav == null) return;
+
+        int rootPaddingLeft = root.getPaddingLeft();
+        int rootPaddingTop = root.getPaddingTop();
+        int rootPaddingRight = root.getPaddingRight();
+        int rootPaddingBottom = root.getPaddingBottom();
+
+        ViewGroup.MarginLayoutParams bottomNavParams =
+                (ViewGroup.MarginLayoutParams) bottomNav.getLayoutParams();
+        int navMarginLeft = bottomNavParams.leftMargin;
+        int navMarginRight = bottomNavParams.rightMargin;
+        int navMarginBottom = bottomNavParams.bottomMargin;
+
+        ViewCompat.setOnApplyWindowInsetsListener(root, (view, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            view.setPadding(
+                    rootPaddingLeft + systemBars.left,
+                    rootPaddingTop + systemBars.top,
+                    rootPaddingRight + systemBars.right,
+                    rootPaddingBottom
+            );
+
+            ViewGroup.MarginLayoutParams params =
+                    (ViewGroup.MarginLayoutParams) bottomNav.getLayoutParams();
+            params.leftMargin = navMarginLeft;
+            params.rightMargin = navMarginRight;
+            params.bottomMargin = navMarginBottom + systemBars.bottom;
+            bottomNav.setLayoutParams(params);
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(root);
     }
 
     /**

@@ -68,6 +68,7 @@ public class UserDashboard extends BaseActivity {
         observeViewModel();
         setupSearch();
         setupRefreshButton();
+        viewModel.searchStations("");
         requestLocationPermissionsForAutoFetch();
     }
 
@@ -156,8 +157,10 @@ public class UserDashboard extends BaseActivity {
                 break;
             case ERROR:
                 Toast.makeText(this, "Error loading rescue stations", Toast.LENGTH_SHORT).show();
-                recyclerViewStations.setVisibility(View.GONE);
-                tvAutoFetchHint.setText(message == null ? "Error loading stations. Please try again." : message);
+                recyclerViewStations.setVisibility(View.VISIBLE);
+                tvAutoFetchHint.setText(message == null
+                        ? "Offline mode. Search is available when cached station data exists."
+                        : message);
                 tvAutoFetchHint.setVisibility(View.VISIBLE);
                 break;
             case IDLE:

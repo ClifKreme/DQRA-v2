@@ -129,7 +129,7 @@ public class AccountRepository {
                     }
                     resolveAdminOrUserDestination(userId, callback);
                 })
-                .addOnFailureListener(callback::onError);
+                .addOnFailureListener(exception -> resolveCachedStartDestination(userId, callback, exception));
     }
 
     private void resolveAdminOrUserDestination(String userId, Callback<StartDestination> callback) {
@@ -141,7 +141,7 @@ public class AccountRepository {
                     }
                     resolveUserDestination(userId, callback);
                 })
-                .addOnFailureListener(callback::onError);
+                .addOnFailureListener(exception -> resolveCachedStartDestination(userId, callback, exception));
     }
 
     private void resolveUserDestination(String userId, Callback<StartDestination> callback) {
@@ -157,7 +157,7 @@ public class AccountRepository {
                             ? StartDestination.USER_DASHBOARD
                             : StartDestination.COMPLETE_PROFILE);
                 })
-                .addOnFailureListener(callback::onError);
+                .addOnFailureListener(exception -> resolveCachedStartDestination(userId, callback, exception));
     }
 
     private void resolvePendingStartDestination(String userId, Callback<StartDestination> callback) {
@@ -179,7 +179,26 @@ public class AccountRepository {
                         callback.onSuccess(StartDestination.LOGIN);
                     }
                 })
-                .addOnFailureListener(callback::onError);
+                .addOnFailureListener(exception -> resolveCachedStartDestination(userId, callback, exception));
+    }
+
+    private void resolveCachedStartDestination(String userId, Callback<StartDestination> callback,
+                                               Exception originalException) {
+        UserProfile cachedUserProfile = AppCache.getInstance().getUserProfile(userId);
+        if (cachedUserProfile != null) {
+            callback.onSuccess(cachedUserProfile.isComplete()
+                    ? StartDestination.USER_DASHBOARD
+                    : StartDestination.COMPLETE_PROFILE);
+            return;
+        }
+
+        if (AppCache.getInstance().getAdminProfile(userId) != null
+                || AppCache.getInstance().getAdminMunicipality(userId) != null) {
+            callback.onSuccess(StartDestination.ADMIN_DASHBOARD);
+            return;
+        }
+
+        callback.onError(originalException);
     }
 
     public void loadCurrentUserProfile(Callback<UserProfile> callback) {
