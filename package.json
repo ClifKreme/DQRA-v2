@@ -1,0 +1,9 @@
+{
+  "name": "dqra-web-root",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix dqra-web run dev",
+    "build": "npm --prefix dqra-web run build",
+    "preview": "npm --prefix dqra-web run preview"
+  }
+}
